@@ -4,7 +4,7 @@ from connections_db.connections_cryptocurrencies import ConnectionDBCryptoCurren
 from dotenv import load_dotenv
 import os
 
-load_dotenv(".env")
+load_dotenv("local.env")
 
 def updateCryptos():
     connectionCrypto = ConnectionDBCryptoCurrencies()

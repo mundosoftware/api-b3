@@ -1,29 +1,87 @@
-# API Ações
-### API simples que retorna: Preço, DY, ultimo valor em dividendos, logo, preço mínimo em 12 meses, preço maxímo em 12 meses, oscilação diária, oscilação anual, cnpj e link do site de RI.
+# B3 Watch API
 
-### Libs Utilizadas:
-- Fast API
-- numpy
-- sqlite3
-- beautifulSoup4
+FastAPI backend plus a SwiftUI watchOS client for tracking B3 tickers, saving favorites, configuring price/percentage alerts, and receiving OneSignal push notifications.
 
-### Descrição do Funcionamento:
-Ao executar: <code>python main.py</code>, Fast API irá executar localmente na porta 8000(no debug), abrindo as seguintes rotas: 
-  - docs (rota padrão do Fast API)
-  - get-tickers
-  - get-ticker/{nome da ação. exemplo: petr4}
-  - get-tickers-by-order/{exemplo: valor_cota}
-  - get-values-cryptos
+## What Changed
 
-Ao executar: <code>python updateValues.py</code>, será feito web-scraping com bs4(Beautiful Soup) no site <a href="https://statusinvest.com.br">Status Invest</a>, onde irá atualizar os tickers(FIIs, BDRs, ETFs e Ações) e os valores das Crypto Moedas no site <a href="https://coinranking.com/">Coin Ranking</a>
+- Added a SQLite-backed API for users, watch devices, companies, favorites, alert rules, and notification logs.
+- Added a lightweight alert scheduler that fetches each due ticker once per cycle and evaluates every user rule that depends on that ticker.
+- Added OneSignal server integration for standalone watchOS APNs token registration and user-targeted push delivery.
+- Added a `watchos/B3TickerWatch` SwiftUI source tree for ticker search, favorites, alert creation, and watch push registration.
+- Added `scripts/deploy_vps.sh` for one-command VPS deployment over SSH.
+- Kept the legacy `/get-ticker/{ticker}`, `/get-tickers`, and `/get-stocks-by-order/{order}` routes.
 
-Ao clocar o projeto, o dev deverá criar uma conta de desenvolvedor no site <a href="https://developers.coinranking.com/api">Coin Ranking Developers</a>, para gerar sua API de cotação das Crypto Moedas, e colocar no arquivo:
+## Backend
 
-* get_price_cryptocurrencies.py
+Run locally with the deployment script:
 
-Substituindo API_KEY pela chave gerada anteriormente.
+```bash
+cp local.env.example local.env
+./scripts/deploy_vps.sh local
+```
 
-Projeto com deploy no <a href="https://heroku.com">Heroku</a>, na url: <a href="https://api-b3-python.herokuapp.com">https://api-b3-python.herokuapp.com</a>
+For setup without starting the server:
 
-<img src="https://img.shields.io/github/stars/ramonpaolo/api-b3" alt="Stars"/> <img src="https://img.shields.io/github/license/ramonpaolo/api-b3?color=2b9348" alt="License"/>
-![GitHub repo size](https://img.shields.io/github/repo-size/ramonpaolo/api-b3) ![PyPI - Python Version](https://img.shields.io/pypi/pyversions/flask) ![GitHub top language](https://img.shields.io/github/languages/top/ramonpaolo/api-b3)
+```bash
+./scripts/deploy_vps.sh local --no-start
+```
+
+Local mode creates `venv`, installs dependencies, initializes SQLite at `LOCAL_DATABASE_PATH`, disables the background checker and OneSignal by default through `LOCAL_CHECK_LOOP_ENABLED=false` and `LOCAL_ONESIGNAL_ENABLED=false`, then starts Uvicorn with reload.
+
+Important env vars:
+
+- `DATABASE_PATH`: SQLite file path, default `database/app.db`.
+- `ONESIGNAL_APP_ID`: OneSignal app id.
+- `ONESIGNAL_REST_API_KEY`: OneSignal REST API key.
+- `ADMIN_TOKEN`: required header value for `POST /admin/run-checks` when set.
+- `CHECK_LOOP_SECONDS`: background scheduler interval.
+- `QUOTE_CACHE_TTL_SECONDS`: quote cache age before a live refresh.
+
+Main endpoints:
+
+- `GET /companies/search?q=PETR&limit=25`
+- `GET /companies/{ticker}?refresh=true`
+- `PUT /users/{user_id}`
+- `POST /users/{user_id}/devices/watchos`
+- `GET /users/{user_id}/favorites`
+- `POST /users/{user_id}/favorites`
+- `DELETE /users/{user_id}/favorites/{ticker}`
+- `GET /users/{user_id}/alerts?ticker=PETR4`
+- `POST /users/{user_id}/alerts`
+- `PATCH /users/{user_id}/alerts/{alert_id}`
+- `DELETE /users/{user_id}/alerts/{alert_id}`
+- `POST /admin/run-checks`
+
+Alert rules support:
+
+- `metric`: `price` or `percent`
+- `operator`: `gte` or `lte`
+- `threshold`: target price or percent change
+- `weekdays`: ISO weekday numbers, Monday `1` through Sunday `7`
+- `start_time` and `end_time`: `HH:MM`
+- `frequency_minutes`: minimum interval between checks for that rule
+- `cooldown_minutes`: minimum interval between repeated notifications
+
+## watchOS
+
+The watch app source is under `watchos/B3TickerWatch`.
+
+1. Create a watchOS App target in Xcode named `B3TickerWatch`.
+2. Add the Swift files from `watchos/B3TickerWatch` to the Watch App target.
+3. Set `AppConfig.apiBaseURL` to the deployed VPS URL, for example `http://203.0.113.10:8000`.
+4. Enable Push Notifications for the Watch App target.
+5. Use `development` for debug/ad-hoc builds and `production` for TestFlight/App Store in `AppConfig.deviceEnvironment`.
+
+Standalone watchOS uses APNs directly on the watch. The watch sends its APNs token to this API, and the server registers that token with OneSignal so the REST API key never ships in the watch app.
+
+## VPS Deploy
+
+Create a local `local.env` from `local.env.example`, fill the VPS and OneSignal values, then run:
+
+```bash
+./scripts/deploy_vps.sh vps
+```
+
+The script installs system packages, syncs the project, creates a Python venv, writes the remote `local.env`, installs a systemd service with one Uvicorn worker, and starts the API on `http://<VPS_HOST>:<SERVER_PORT>`.
+
+This is designed for a small single-node VPS with 1 vCPU and 6 GB RAM. Use the IP address directly; no domain is required.

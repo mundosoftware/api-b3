@@ -1,27 +1,21 @@
-import numpy
 from get_price_cryptocurrencies import updateCryptos
 from lists import fiis, bdrs, stocks, etfs
 import requests
 from bs4 import BeautifulSoup
 from get_data_internet import getAllValuesFiis, getAllValuesStocks, getAllValuesEtfs, getAllValuesBdrs
 
-totalLengthStocks = len(stocks) + len(fiis) + len(bdrs) + len(etfs)
-totalStocks = stocks
-totalStocks = numpy.append(totalStocks, fiis)
-totalStocks = numpy.append(totalStocks, bdrs)
-totalStocks = numpy.append(totalStocks, etfs)
+totalStocks = stocks + fiis + bdrs + etfs
 
 print("Rodando dnv")
 updateCryptos()
-for x in range(1, totalLengthStocks):
-    typeStock = totalStocks[x]
+for typeStock in totalStocks:
     if typeStock in stocks:
 
         url = requests.get(
             f"https://statusinvest.com.br/acoes/{typeStock}")
         nav = BeautifulSoup(url.text, "html5lib")
 
-        infoAction = getAllValuesStocks(nav, stocks[x].upper())
+        infoAction = getAllValuesStocks(nav, typeStock.upper())
         print(f"Atualizando a ação: {typeStock}")
 
     elif typeStock in fiis:
