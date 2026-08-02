@@ -1,9 +1,15 @@
+//
+//  Trade_AltertApp.swift
+//  Trade Altert Watch App
+//
+//  Created by Nonato Sousa on 02/08/26.
+//
+
 import SwiftUI
-import UserNotifications
 import WatchKit
 
 @main
-struct B3TickerWatchApp: App {
+struct Trade_Altert_Watch_AppApp: App {
     @WKExtensionDelegateAdaptor(ExtensionDelegate.self) var extensionDelegate
     @StateObject private var model = AppModel.shared
 
