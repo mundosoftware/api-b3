@@ -31,12 +31,24 @@ class FakeTickerService:
 class FakeOneSignal:
     configured = True
 
-    def __init__(self):
+    def __init__(self, next_response=None):
         self.messages = []
+        self.deleted_subscriptions = []
+        self.next_response = next_response
 
     def send_push_to_user(self, user_id, title, body, data=None, subscription_ids=None):
         self.messages.append((user_id, title, body, data, subscription_ids))
-        return SimpleNamespace(notification_id=f"notification-{len(self.messages)}")
+        if self.next_response is not None:
+            return self.next_response
+        return SimpleNamespace(
+            notification_id=f"notification-{len(self.messages)}",
+            invalid_subscription_ids=(),
+            all_targeted_subscriptions_invalid=False,
+        )
+
+    def delete_subscription(self, subscription_id):
+        self.deleted_subscriptions.append(subscription_id)
+        return True
 
 
 class AlertEngineTest(unittest.TestCase):
@@ -218,6 +230,146 @@ class AlertEngineTest(unittest.TestCase):
         self.assertEqual(notification_payload["contents"]["pt"], "Corpo")
         self.assertEqual(notification_payload["contents"]["en"], "Body")
         self.assertEqual(registration_payload["language"], "en")
+
+    def test_invalid_subscription_is_removed_after_notification_send(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            settings = Settings(
+                database_path=f"{tmpdir}/app.db",
+                check_loop_enabled=False,
+                onesignal_app_id="app-id",
+                onesignal_rest_api_key="api-key",
+            )
+            init_db(settings)
+            repository = Repository(settings)
+            repository.create_alert(
+                "user-a",
+                AlertRuleCreateRequest(
+                    ticker="PETR4",
+                    metric="price",
+                    operator="gte",
+                    threshold=10.0,
+                    weekdays=[5],
+                    start_time="00:00",
+                    end_time="23:59",
+                    timezone="UTC",
+                    frequency_minutes=1,
+                    cooldown_minutes=0,
+                ),
+            )
+            repository.save_device(
+                user_id="user-a",
+                platform="ios",
+                device_token="ios-token",
+                environment="production",
+                onesignal_subscription_id="stale-subscription",
+            )
+            repository.save_device(
+                user_id="user-a",
+                platform="watchos",
+                device_token="watch-token",
+                environment="production",
+                onesignal_subscription_id="watch-subscription",
+            )
+
+            onesignal = FakeOneSignal(
+                SimpleNamespace(
+                    notification_id="notification-1",
+                    invalid_subscription_ids=("stale-subscription",),
+                    all_targeted_subscriptions_invalid=False,
+                )
+            )
+            engine = AlertEngine(repository, FakeTickerService(), onesignal, settings)
+            result = engine.run_due_checks(datetime(2026, 7, 31, 14, 0, tzinfo=UTC))
+
+            self.assertEqual(result.notifications_sent, 1)
+            self.assertEqual(onesignal.deleted_subscriptions, ["stale-subscription"])
+            self.assertEqual(
+                repository.list_enabled_notification_subscription_ids("user-a"),
+                ["watch-subscription"],
+            )
+
+    def test_all_invalid_targeted_subscriptions_are_removed(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            settings = Settings(
+                database_path=f"{tmpdir}/app.db",
+                check_loop_enabled=False,
+                onesignal_app_id="app-id",
+                onesignal_rest_api_key="api-key",
+            )
+            init_db(settings)
+            repository = Repository(settings)
+            repository.create_alert(
+                "user-a",
+                AlertRuleCreateRequest(
+                    ticker="PETR4",
+                    metric="price",
+                    operator="gte",
+                    threshold=10.0,
+                    weekdays=[5],
+                    start_time="00:00",
+                    end_time="23:59",
+                    timezone="UTC",
+                    frequency_minutes=1,
+                    cooldown_minutes=0,
+                ),
+            )
+            repository.save_device(
+                user_id="user-a",
+                platform="ios",
+                device_token="ios-token",
+                environment="production",
+                onesignal_subscription_id="stale-subscription",
+            )
+
+            onesignal = FakeOneSignal(
+                SimpleNamespace(
+                    notification_id=None,
+                    invalid_subscription_ids=(),
+                    all_targeted_subscriptions_invalid=True,
+                )
+            )
+            engine = AlertEngine(repository, FakeTickerService(), onesignal, settings)
+            result = engine.run_due_checks(datetime(2026, 7, 31, 14, 0, tzinfo=UTC))
+
+            self.assertEqual(result.notifications_sent, 0)
+            self.assertEqual(onesignal.deleted_subscriptions, ["stale-subscription"])
+            self.assertEqual(repository.list_enabled_notification_subscription_ids("user-a"), [])
+
+    def test_onesignal_response_marks_invalid_subscriptions_for_cleanup(self):
+        settings = Settings(
+            check_loop_enabled=False,
+            onesignal_app_id="app-id",
+            onesignal_rest_api_key="api-key",
+        )
+        client = OneSignalClient(settings)
+
+        with patch("src.onesignal.requests.post") as post:
+            post.return_value.status_code = 200
+            post.return_value.json.return_value = {
+                "id": "notification-id",
+                "errors": {"invalid_subscription_ids": ["stale-subscription"]},
+            }
+            notification = client.send_push_to_user(
+                user_id="user-a",
+                title="title",
+                body="body",
+                subscription_ids=["stale-subscription", "valid-subscription"],
+            )
+
+            post.return_value.json.return_value = {
+                "recipients": 0,
+                "errors": ["All included subscriptions are not subscribed"],
+            }
+            all_invalid = client.send_push_to_user(
+                user_id="user-a",
+                title="title",
+                body="body",
+                subscription_ids=["stale-subscription"],
+            )
+
+        self.assertEqual(notification.invalid_subscription_ids, ("stale-subscription",))
+        self.assertFalse(notification.all_targeted_subscriptions_invalid)
+        self.assertTrue(all_invalid.all_targeted_subscriptions_invalid)
 
 
 if __name__ == "__main__":

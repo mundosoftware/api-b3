@@ -1,4 +1,5 @@
 import sqlite3
+from collections.abc import Sequence
 from typing import Any
 
 from src.config import Settings, get_settings
@@ -491,6 +492,96 @@ class Repository:
                 (user_id, *platforms),
             ).fetchall()
             return [row["onesignal_subscription_id"] for row in rows]
+
+    def list_device_subscription_ids(
+        self,
+        user_id: str,
+        platform: str,
+        apns_token: str | None = None,
+        onesignal_subscription_id: str | None = None,
+    ) -> list[str]:
+        conditions = [
+            "user_id = ?",
+            "platform = ?",
+            "onesignal_subscription_id IS NOT NULL",
+            "onesignal_subscription_id != ''",
+        ]
+        params: list[Any] = [user_id, platform]
+        identifier_conditions: list[str] = []
+        identifier_params: list[Any] = []
+        if apns_token is not None:
+            identifier_conditions.append("apns_token = ?")
+            identifier_params.append(apns_token)
+        if onesignal_subscription_id is not None:
+            identifier_conditions.append("onesignal_subscription_id = ?")
+            identifier_params.append(onesignal_subscription_id)
+        if identifier_conditions:
+            conditions.append(f"({' OR '.join(identifier_conditions)})")
+            params.extend(identifier_params)
+
+        with self.database.connect() as db:
+            rows = db.execute(
+                f"""
+                SELECT DISTINCT onesignal_subscription_id
+                FROM user_devices
+                WHERE {" AND ".join(conditions)}
+                """,
+                params,
+            ).fetchall()
+            return [row["onesignal_subscription_id"] for row in rows]
+
+    def delete_devices(
+        self,
+        user_id: str,
+        platform: str,
+        apns_token: str | None = None,
+        subscription_ids: Sequence[str] | None = None,
+    ) -> int:
+        if apns_token is None and not subscription_ids:
+            raise ValueError("a device token or subscription id is required")
+
+        conditions = ["user_id = ?", "platform = ?"]
+        params: list[Any] = [user_id, platform]
+        identifier_conditions: list[str] = []
+        identifier_params: list[Any] = []
+        if apns_token is not None:
+            identifier_conditions.append("apns_token = ?")
+            identifier_params.append(apns_token)
+        if subscription_ids:
+            unique_ids = list(dict.fromkeys(subscription_ids))
+            placeholders = ",".join("?" for _ in unique_ids)
+            identifier_conditions.append(f"onesignal_subscription_id IN ({placeholders})")
+            identifier_params.extend(unique_ids)
+        conditions.append(f"({' OR '.join(identifier_conditions)})")
+        params.extend(identifier_params)
+
+        with self.database.connect() as db:
+            cursor = db.execute(
+                f"DELETE FROM user_devices WHERE {' AND '.join(conditions)}",
+                params,
+            )
+            return cursor.rowcount
+
+    def delete_devices_by_subscription_ids(
+        self, user_id: str, subscription_ids: Sequence[str]
+    ) -> int:
+        unique_ids = list(
+            dict.fromkeys(subscription_id for subscription_id in subscription_ids if subscription_id)
+        )
+        if not unique_ids:
+            return 0
+
+        placeholders = ",".join("?" for _ in unique_ids)
+        with self.database.connect() as db:
+            cursor = db.execute(
+                f"""
+                DELETE FROM user_devices
+                WHERE user_id = ?
+                    AND onesignal_subscription_id IN ({placeholders})
+                """,
+                (user_id, *unique_ids),
+            )
+            return cursor.rowcount
 
     def log_notification(
         self,

@@ -171,7 +171,13 @@ class AlertEngine:
                     "percent_change": evaluation.percent_change,
                 },
             )
-            sent = self.onesignal.configured
+            removed_devices = self._cleanup_stale_subscriptions(
+                rule.user_id, notification, subscription_ids
+            )
+            sent = self.onesignal.configured and bool(notification.notification_id)
+            status = "sent" if sent else ("not_delivered" if self.onesignal.configured else "onesignal_disabled")
+            if removed_devices:
+                status = f"{status}; removed_stale_devices={removed_devices}"
             self.repository.log_notification(
                 user_id=rule.user_id,
                 alert_rule_id=rule.id,
@@ -179,7 +185,7 @@ class AlertEngine:
                 title=log_title,
                 body=log_body,
                 onesignal_notification_id=notification.notification_id,
-                status="sent" if sent else "onesignal_disabled",
+                status=status,
             )
             return sent
         except OneSignalError as exc:
@@ -192,6 +198,25 @@ class AlertEngine:
                 status=f"error: {exc}",
             )
             return False
+
+    def _cleanup_stale_subscriptions(
+        self,
+        user_id: str,
+        notification: object,
+        attempted_subscription_ids: list[str] | None,
+    ) -> int:
+        stale_ids = set(getattr(notification, "invalid_subscription_ids", ()) or ())
+        if getattr(notification, "all_targeted_subscriptions_invalid", False):
+            stale_ids.update(attempted_subscription_ids or [])
+        if not stale_ids:
+            return 0
+
+        for subscription_id in stale_ids:
+            try:
+                self.onesignal.delete_subscription(subscription_id)
+            except OneSignalError:
+                pass
+        return self.repository.delete_devices_by_subscription_ids(user_id, sorted(stale_ids))
 
     def _notification_text(
         self, rule: AlertRuleOut, evaluation: Evaluation

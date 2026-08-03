@@ -43,6 +43,8 @@ Main endpoints:
 - `GET /companies/{ticker}?refresh=true`
 - `PUT /users/{user_id}`
 - `POST /users/{user_id}/devices/watchos`
+- `POST /users/{user_id}/devices/ios`
+- `POST /users/{user_id}/devices/{ios|watchos}/unregister`
 - `GET /users/{user_id}/favorites`
 - `POST /users/{user_id}/favorites`
 - `DELETE /users/{user_id}/favorites/{ticker}`
@@ -51,6 +53,8 @@ Main endpoints:
 - `PATCH /users/{user_id}/alerts/{alert_id}`
 - `DELETE /users/{user_id}/alerts/{alert_id}`
 - `POST /admin/run-checks`
+
+When OneSignal/APNs reports stale push subscriptions during alert delivery, the server deletes the matching OneSignal subscriptions and removes the corresponding `user_devices` rows. This is the reliable cleanup point for uninstalls: Apple can delay invalid-token reporting, so removal may happen only after later send attempts. The explicit unregister endpoint is for cases where a client can still call the API, such as logout or a deliberate local notification cleanup.
 
 Alert rules support:
 

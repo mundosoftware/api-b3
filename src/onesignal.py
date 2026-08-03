@@ -21,6 +21,8 @@ class OneSignalRegistration:
 class OneSignalNotification:
     notification_id: str | None
     raw_response: dict[str, Any]
+    invalid_subscription_ids: tuple[str, ...] = ()
+    all_targeted_subscriptions_invalid: bool = False
 
 
 class OneSignalClient:
@@ -109,7 +111,35 @@ class OneSignalClient:
         if response.status_code >= 400:
             raise OneSignalError(f"OneSignal push failed: {response.status_code} {response.text}")
         payload = response.json()
-        return OneSignalNotification(notification_id=payload.get("id"), raw_response=payload)
+        invalid_subscription_ids = self._invalid_subscription_ids(payload)
+        return OneSignalNotification(
+            notification_id=payload.get("id"),
+            raw_response=payload,
+            invalid_subscription_ids=invalid_subscription_ids,
+            all_targeted_subscriptions_invalid=self._all_targeted_subscriptions_invalid(
+                payload, subscription_ids
+            ),
+        )
+
+    def delete_subscription(self, subscription_id: str) -> bool:
+        if not self.configured:
+            return False
+
+        response = requests.delete(
+            f"https://api.onesignal.com/apps/{self.settings.onesignal_app_id}/subscriptions/{subscription_id}",
+            headers={
+                "Authorization": f"Key {self.settings.onesignal_rest_api_key}",
+                "Content-Type": "application/json",
+            },
+            timeout=8,
+        )
+        if response.status_code == 404:
+            return False
+        if response.status_code >= 400:
+            raise OneSignalError(
+                f"OneSignal subscription delete failed: {response.status_code} {response.text}"
+            )
+        return True
 
     def _localized_text(self, value: str | Mapping[str, str]) -> dict[str, str]:
         if isinstance(value, str):
@@ -120,3 +150,41 @@ class OneSignalClient:
         localized.setdefault("pt", fallback)
         localized.setdefault("en", fallback)
         return localized
+
+    def _invalid_subscription_ids(self, payload: dict[str, Any]) -> tuple[str, ...]:
+        values: list[str] = []
+        self._collect_invalid_subscription_ids(payload.get("errors"), values)
+        self._collect_invalid_subscription_ids(payload.get("warnings"), values)
+        return tuple(dict.fromkeys(value for value in values if value))
+
+    def _collect_invalid_subscription_ids(self, value: Any, values: list[str]) -> None:
+        if isinstance(value, dict):
+            for key, nested in value.items():
+                normalized_key = str(key).lower()
+                if normalized_key in {"invalid_subscription_ids", "invalid_player_ids"}:
+                    values.extend(self._string_values(nested))
+                else:
+                    self._collect_invalid_subscription_ids(nested, values)
+            return
+
+        if isinstance(value, list):
+            for item in value:
+                self._collect_invalid_subscription_ids(item, values)
+
+    def _string_values(self, value: Any) -> list[str]:
+        if isinstance(value, str):
+            return [value]
+        if isinstance(value, list):
+            return [item for item in value if isinstance(item, str)]
+        return []
+
+    def _all_targeted_subscriptions_invalid(
+        self, payload: dict[str, Any], subscription_ids: Sequence[str] | None
+    ) -> bool:
+        if not subscription_ids or payload.get("id"):
+            return False
+        if payload.get("recipients") == 0:
+            return True
+
+        errors = str(payload.get("errors", "")).lower()
+        return "no valid subscription" in errors or "not subscribed" in errors

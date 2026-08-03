@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 Metric = Literal["price", "percent"]
@@ -59,6 +59,25 @@ class DeviceRegistrationOut(BaseModel):
     user_id: str
     onesignal_configured: bool
     onesignal_subscription_id: str | None = None
+
+
+class DeviceUnregisterRequest(BaseModel):
+    onesignal_subscription_id: str | None = Field(default=None, min_length=1, max_length=128)
+    apns_token: str | None = Field(default=None, min_length=16, max_length=512)
+
+    @model_validator(mode="after")
+    def validate_identifier(self):
+        if self.onesignal_subscription_id is None and self.apns_token is None:
+            raise ValueError("onesignal_subscription_id or apns_token is required")
+        return self
+
+
+class DeviceUnregisterOut(BaseModel):
+    user_id: str
+    platform: Literal["ios", "watchos"]
+    removed_devices: int
+    onesignal_deleted: int
+    onesignal_errors: list[str] = Field(default_factory=list)
 
 
 class NotificationPreferencesUpdateRequest(BaseModel):

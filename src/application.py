@@ -2,6 +2,7 @@ import asyncio
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import Literal
 
 from fastapi import FastAPI, Header, HTTPException, Query, Response, status
 from fastapi.concurrency import run_in_threadpool
@@ -17,6 +18,8 @@ from src.models import (
     CompanyListOut,
     DeviceRegistrationOut,
     DeviceRegistrationRequest,
+    DeviceUnregisterOut,
+    DeviceUnregisterRequest,
     FavoriteCreateRequest,
     FavoriteListOut,
     FavoriteOut,
@@ -146,6 +149,48 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             user_id=user_id,
             onesignal_configured=onesignal.configured,
             onesignal_subscription_id=request.onesignal_subscription_id,
+        )
+
+    @app.post("/users/{user_id}/devices/{platform}/unregister", response_model=DeviceUnregisterOut)
+    async def unregister_device(
+        user_id: str,
+        platform: Literal["ios", "watchos"],
+        request: DeviceUnregisterRequest,
+    ) -> DeviceUnregisterOut:
+        subscription_ids = []
+        if request.onesignal_subscription_id:
+            subscription_ids.append(request.onesignal_subscription_id)
+        subscription_ids.extend(
+            repository.list_device_subscription_ids(
+                user_id=user_id,
+                platform=platform,
+                apns_token=request.apns_token,
+                onesignal_subscription_id=request.onesignal_subscription_id,
+            )
+        )
+        subscription_ids = list(dict.fromkeys(subscription_ids))
+
+        onesignal_deleted = 0
+        onesignal_errors: list[str] = []
+        for subscription_id in subscription_ids:
+            try:
+                if onesignal.delete_subscription(subscription_id):
+                    onesignal_deleted += 1
+            except OneSignalError as exc:
+                onesignal_errors.append(str(exc))
+
+        removed_devices = repository.delete_devices(
+            user_id=user_id,
+            platform=platform,
+            apns_token=request.apns_token,
+            subscription_ids=subscription_ids,
+        )
+        return DeviceUnregisterOut(
+            user_id=user_id,
+            platform=platform,
+            removed_devices=removed_devices,
+            onesignal_deleted=onesignal_deleted,
+            onesignal_errors=onesignal_errors,
         )
 
     @app.get("/users/{user_id}/notification-preferences", response_model=NotificationPreferencesOut)
