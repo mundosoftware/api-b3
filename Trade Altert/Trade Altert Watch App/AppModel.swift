@@ -6,6 +6,7 @@ import WatchKit
 @MainActor
 final class AppModel: ObservableObject {
     static let shared = AppModel()
+    private static let apnsTokenStorageKey = "b3watch.apnsToken"
 
     @Published var favorites: [Favorite] = []
     @Published var searchResults: [Company] = []
@@ -31,7 +32,7 @@ final class AppModel: ObservableObject {
         WatchCompanionSyncService.shared.sendUserId(userId)
         await run {
             try await self.api.upsertUser(userId: self.userId, timezone: TimeZone.current.identifier)
-            await self.requestNotificationPermission()
+            await self.requestNotificationPermissionIfNeeded()
             self.favorites = try await self.api.favorites(userId: self.userId)
         }
     }
@@ -94,23 +95,52 @@ final class AppModel: ObservableObject {
     }
 
     func registerDevice(apnsToken: String) async {
+        UserDefaults.standard.set(apnsToken, forKey: Self.apnsTokenStorageKey)
         await run {
             try await self.api.registerDevice(userId: self.userId, token: apnsToken)
         }
+    }
+
+    func refreshDeviceRegistrationForLanguageChange() async {
+        guard
+            let token = UserDefaults.standard.string(forKey: Self.apnsTokenStorageKey),
+            !token.isEmpty
+        else {
+            return
+        }
+
+        await registerDevice(apnsToken: token)
     }
 
     func resendUserIdToCompanion() {
         WatchCompanionSyncService.shared.sendUserId(userId)
     }
 
-    private func requestNotificationPermission() async {
+    private func requestNotificationPermissionIfNeeded() async {
         do {
-            let granted = try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])
-            if granted {
+            switch await notificationAuthorizationStatus() {
+            case .authorized, .provisional, .ephemeral:
                 WKExtension.shared().registerForRemoteNotifications()
+            case .notDetermined:
+                let granted = try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])
+                if granted {
+                    WKExtension.shared().registerForRemoteNotifications()
+                }
+            case .denied:
+                break
+            @unknown default:
+                break
             }
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+
+    private func notificationAuthorizationStatus() async -> UNAuthorizationStatus {
+        await withCheckedContinuation { continuation in
+            UNUserNotificationCenter.current().getNotificationSettings { settings in
+                continuation.resume(returning: settings.authorizationStatus)
+            }
         }
     }
 

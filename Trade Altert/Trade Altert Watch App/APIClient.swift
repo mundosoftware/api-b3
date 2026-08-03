@@ -31,6 +31,7 @@ actor APIClient {
         let body = DeviceRegistrationRequest(
             apnsToken: token,
             environment: AppConfig.deviceEnvironment,
+            language: AppLanguage.shared.code.rawValue,
             deviceModel: device.model,
             deviceOs: device.systemVersion,
             appVersion: device.appVersion

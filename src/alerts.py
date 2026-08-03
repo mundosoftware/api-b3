@@ -139,14 +139,9 @@ class AlertEngine:
         return now - last_triggered < timedelta(minutes=rule.cooldown_minutes)
 
     def notify(self, rule: AlertRuleOut, evaluation: Evaluation) -> bool:
-        title = f"{rule.ticker} alert"
-        if rule.metric == "price":
-            comparator = "above" if rule.operator == "gte" else "below"
-            body = f"{rule.ticker} is {comparator} R$ {rule.threshold:.2f}: R$ {evaluation.price:.2f}"
-        else:
-            comparator = "up" if rule.operator == "gte" else "down"
-            percent = evaluation.percent_change or 0.0
-            body = f"{rule.ticker} moved {comparator} {rule.threshold:.2f}%: {percent:.2f}%"
+        title, body = self._notification_text(rule, evaluation)
+        log_title = title["pt"]
+        log_body = body["pt"]
 
         subscription_ids: list[str] | None = None
         if self.onesignal.configured:
@@ -156,8 +151,8 @@ class AlertEngine:
                     user_id=rule.user_id,
                     alert_rule_id=rule.id,
                     ticker=rule.ticker,
-                    title=title,
-                    body=body,
+                    title=log_title,
+                    body=log_body,
                     status="no_enabled_devices",
                 )
                 return False
@@ -181,8 +176,8 @@ class AlertEngine:
                 user_id=rule.user_id,
                 alert_rule_id=rule.id,
                 ticker=rule.ticker,
-                title=title,
-                body=body,
+                title=log_title,
+                body=log_body,
                 onesignal_notification_id=notification.notification_id,
                 status="sent" if sent else "onesignal_disabled",
             )
@@ -192,11 +187,65 @@ class AlertEngine:
                 user_id=rule.user_id,
                 alert_rule_id=rule.id,
                 ticker=rule.ticker,
-                title=title,
-                body=body,
+                title=log_title,
+                body=log_body,
                 status=f"error: {exc}",
             )
             return False
+
+    def _notification_text(
+        self, rule: AlertRuleOut, evaluation: Evaluation
+    ) -> tuple[dict[str, str], dict[str, str]]:
+        title = {
+            "pt": f"Alerta {rule.ticker}",
+            "en": f"{rule.ticker} alert",
+        }
+
+        if rule.metric == "price":
+            body = {
+                "pt": (
+                    f"{rule.ticker} está "
+                    f"{'acima de' if rule.operator == 'gte' else 'abaixo de'} "
+                    f"{self._format_currency(rule.threshold, 'pt')}: "
+                    f"{self._format_currency(evaluation.price, 'pt')}"
+                ),
+                "en": (
+                    f"{rule.ticker} is "
+                    f"{'above' if rule.operator == 'gte' else 'below'} "
+                    f"{self._format_currency(rule.threshold, 'en')}: "
+                    f"{self._format_currency(evaluation.price, 'en')}"
+                ),
+            }
+            return title, body
+
+        percent = evaluation.percent_change or 0.0
+        body = {
+            "pt": (
+                f"{rule.ticker} "
+                f"{'subiu' if rule.operator == 'gte' else 'caiu'} "
+                f"{self._format_percent(rule.threshold, 'pt')}: "
+                f"{self._format_percent(percent, 'pt')}"
+            ),
+            "en": (
+                f"{rule.ticker} moved "
+                f"{'up' if rule.operator == 'gte' else 'down'} "
+                f"{self._format_percent(rule.threshold, 'en')}: "
+                f"{self._format_percent(percent, 'en')}"
+            ),
+        }
+        return title, body
+
+    def _format_currency(self, value: float, language: str) -> str:
+        return f"R$ {self._format_decimal(value, language)}"
+
+    def _format_percent(self, value: float, language: str) -> str:
+        return f"{self._format_decimal(value, language)}%"
+
+    def _format_decimal(self, value: float, language: str) -> str:
+        formatted = f"{value:.2f}"
+        if language == "pt":
+            return formatted.replace(".", ",")
+        return formatted
 
     def _local_time(self, now: datetime, timezone: str) -> datetime:
         try:

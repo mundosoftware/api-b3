@@ -2,11 +2,13 @@ import tempfile
 import unittest
 from datetime import UTC, datetime
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from src.alerts import AlertEngine
 from src.config import Settings
 from src.database import init_db
 from src.models import AlertRuleCreateRequest
+from src.onesignal import OneSignalClient
 from src.repositories import Repository
 
 
@@ -139,6 +141,83 @@ class AlertEngineTest(unittest.TestCase):
 
             self.assertEqual(result.notifications_sent, 1)
             self.assertEqual(onesignal.messages[0][4], ["ios-subscription"])
+
+    def test_alert_notification_text_is_localized(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            settings = Settings(
+                database_path=f"{tmpdir}/app.db",
+                check_loop_enabled=False,
+                onesignal_app_id="app-id",
+                onesignal_rest_api_key="api-key",
+            )
+            init_db(settings)
+            repository = Repository(settings)
+            repository.create_alert(
+                "user-a",
+                AlertRuleCreateRequest(
+                    ticker="PETR4",
+                    metric="price",
+                    operator="gte",
+                    threshold=10.0,
+                    weekdays=[5],
+                    start_time="00:00",
+                    end_time="23:59",
+                    timezone="UTC",
+                    frequency_minutes=1,
+                    cooldown_minutes=0,
+                ),
+            )
+            repository.save_device(
+                user_id="user-a",
+                platform="ios",
+                device_token="ios-subscription",
+                environment="production",
+                onesignal_subscription_id="ios-subscription",
+            )
+
+            onesignal = FakeOneSignal()
+            engine = AlertEngine(repository, FakeTickerService(), onesignal, settings)
+            engine.run_due_checks(datetime(2026, 7, 31, 14, 0, tzinfo=UTC))
+
+            _, title, body, _, _ = onesignal.messages[0]
+            self.assertEqual(title["pt"], "Alerta PETR4")
+            self.assertEqual(title["en"], "PETR4 alert")
+            self.assertEqual(body["pt"], "PETR4 está acima de R$ 10,00: R$ 11,00")
+            self.assertEqual(body["en"], "PETR4 is above R$ 10.00: R$ 11.00")
+
+    def test_onesignal_payload_preserves_localized_text_and_language(self):
+        settings = Settings(
+            check_loop_enabled=False,
+            onesignal_app_id="app-id",
+            onesignal_rest_api_key="api-key",
+        )
+        client = OneSignalClient(settings)
+
+        with patch("src.onesignal.requests.post") as post:
+            post.return_value.status_code = 200
+            post.return_value.json.return_value = {"id": "notification-id"}
+
+            client.send_push_to_user(
+                user_id="user-a",
+                title={"pt": "Alerta PETR4", "en": "PETR4 alert"},
+                body={"pt": "Corpo", "en": "Body"},
+                subscription_ids=["subscription-id"],
+            )
+            notification_payload = post.call_args.kwargs["json"]
+
+            client.register_watch_device(
+                user_id="user-a",
+                apns_token="0" * 64,
+                environment="production",
+                language="en",
+            )
+            registration_payload = post.call_args.kwargs["json"]
+
+        self.assertEqual(notification_payload["headings"]["pt"], "Alerta PETR4")
+        self.assertEqual(notification_payload["headings"]["en"], "PETR4 alert")
+        self.assertEqual(notification_payload["contents"]["pt"], "Corpo")
+        self.assertEqual(notification_payload["contents"]["en"], "Body")
+        self.assertEqual(registration_payload["language"], "en")
 
 
 if __name__ == "__main__":

@@ -105,6 +105,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 user_id=user_id,
                 apns_token=request.apns_token,
                 environment=request.environment,
+                language=request.language,
                 device_model=request.device_model,
                 device_os=request.device_os,
                 app_version=request.app_version,

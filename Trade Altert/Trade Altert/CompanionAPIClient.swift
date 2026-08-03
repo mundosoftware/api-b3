@@ -30,6 +30,7 @@ actor CompanionAPIClient {
         let device = CompanionDeviceSnapshot.current
         let body = IOSDeviceRegistrationRequest(
             onesignalSubscriptionId: subscriptionId,
+            language: AppLanguage.shared.code.rawValue,
             deviceModel: device.model,
             deviceOs: device.systemVersion,
             appVersion: device.appVersion

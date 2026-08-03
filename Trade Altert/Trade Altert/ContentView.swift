@@ -33,7 +33,7 @@ struct ContentView: View {
                 NotificationSettingsView()
             }
             .tabItem {
-                Label(language.text("tab.notifications"), systemImage: "bell")
+                Label(language.text("tab.settings"), systemImage: "gearshape")
             }
         }
         .onAppear(perform: configureOneSignalVerification)

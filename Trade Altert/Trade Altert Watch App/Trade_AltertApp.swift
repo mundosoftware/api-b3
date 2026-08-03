@@ -23,6 +23,11 @@ struct Trade_Altert_Watch_AppApp: App {
                 .task {
                     await model.bootstrap()
                 }
+                .onChange(of: language.code) { _, _ in
+                    Task {
+                        await model.refreshDeviceRegistrationForLanguageChange()
+                    }
+                }
         }
     }
 }

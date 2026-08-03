@@ -18,6 +18,7 @@ struct AlertEditorView: View {
     @State private var endDate: Date
     @State private var frequency: Int
     @State private var cooldown: Int
+    @FocusState private var isThresholdFocused: Bool
 
     private var isEditing: Bool {
         alert != nil
@@ -63,6 +64,7 @@ struct AlertEditorView: View {
                     format: .number
                 )
                     .keyboardType(.decimalPad)
+                    .focused($isThresholdFocused)
             }
 
             Section(language.text("section.week")) {
@@ -87,6 +89,15 @@ struct AlertEditorView: View {
             .disabled(weekdays.isEmpty)
         }
         .navigationTitle(isEditing ? language.text("title.edit_alert") : ticker)
+        .scrollDismissesKeyboard(.interactively)
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button(language.text("action.done")) {
+                    isThresholdFocused = false
+                }
+            }
+        }
     }
 
     private func save() async {

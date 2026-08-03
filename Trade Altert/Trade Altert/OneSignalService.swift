@@ -26,6 +26,7 @@ final class OneSignalService {
         #endif
 
         OneSignal.initialize(appId, withLaunchOptions: launchOptions)
+        setLanguage(AppLanguage.shared.code.rawValue)
         isInitialized = true
     }
 
@@ -68,10 +69,15 @@ final class OneSignalService {
 
     func login(userId: String) {
         OneSignal.login(userId)
+        setLanguage(AppLanguage.shared.code.rawValue)
     }
 
     func logout() {
         OneSignal.logout()
+    }
+
+    func setLanguage(_ languageCode: String) {
+        OneSignal.User.setLanguage(languageCode)
     }
 
     func addEmail(_ email: String) {

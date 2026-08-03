@@ -125,6 +125,7 @@ struct UserUpsertRequest: Encodable {
 struct DeviceRegistrationRequest: Encodable {
     let apnsToken: String
     let environment: String
+    let language: String
     let deviceModel: String
     let deviceOs: String
     let appVersion: String
@@ -132,6 +133,7 @@ struct DeviceRegistrationRequest: Encodable {
     enum CodingKeys: String, CodingKey {
         case apnsToken = "apns_token"
         case environment
+        case language
         case deviceModel = "device_model"
         case deviceOs = "device_os"
         case appVersion = "app_version"

@@ -19,6 +19,9 @@ struct Trade_AltertApp: App {
                 .environmentObject(model)
                 .environmentObject(language)
                 .environment(\.locale, language.locale)
+                .onChange(of: language.code) { _, newLanguage in
+                    OneSignalService.shared.setLanguage(newLanguage.rawValue)
+                }
         }
     }
 }

@@ -124,12 +124,14 @@ struct UserUpsertRequest: Encodable {
 
 struct IOSDeviceRegistrationRequest: Encodable {
     let onesignalSubscriptionId: String
+    let language: String
     let deviceModel: String
     let deviceOs: String
     let appVersion: String
 
     enum CodingKeys: String, CodingKey {
         case onesignalSubscriptionId = "onesignal_subscription_id"
+        case language
         case deviceModel = "device_model"
         case deviceOs = "device_os"
         case appVersion = "app_version"

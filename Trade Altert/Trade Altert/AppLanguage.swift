@@ -94,6 +94,7 @@ final class AppLanguage: ObservableObject {
         "action.allow_notifications": [.pt: "Permitir notificações", .en: "Allow Notifications"],
         "action.not_now": [.pt: "Agora não", .en: "Not Now"],
         "action.ok": [.pt: "OK", .en: "OK"],
+        "action.done": [.pt: "Concluído", .en: "Done"],
         "action.track": [.pt: "Acompanhar", .en: "Track"],
         "action.untrack": [.pt: "Remover", .en: "Untrack"],
         "action.delete": [.pt: "Excluir", .en: "Delete"],

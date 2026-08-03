@@ -52,7 +52,7 @@ struct NotificationSettingsView: View {
             }
             #endif
         }
-        .navigationTitle(language.text("title.notifications"))
+        .navigationTitle(language.text("tab.settings"))
         .disabled(model.isLoading)
     }
 }

@@ -41,6 +41,7 @@ class UserOut(BaseModel):
 class DeviceRegistrationRequest(BaseModel):
     apns_token: str = Field(min_length=16, max_length=512)
     environment: Literal["development", "production"] = "production"
+    language: Literal["pt", "en"] = "pt"
     device_model: str | None = Field(default=None, max_length=80)
     device_os: str | None = Field(default=None, max_length=40)
     app_version: str | None = Field(default=None, max_length=40)
@@ -48,6 +49,7 @@ class DeviceRegistrationRequest(BaseModel):
 
 class IOSDeviceRegistrationRequest(BaseModel):
     onesignal_subscription_id: str = Field(min_length=16, max_length=128)
+    language: Literal["pt", "en"] = "pt"
     device_model: str | None = Field(default=None, max_length=80)
     device_os: str | None = Field(default=None, max_length=40)
     app_version: str | None = Field(default=None, max_length=40)
