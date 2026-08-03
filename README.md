@@ -68,7 +68,7 @@ The watch app source is under `watchos/B3TickerWatch`.
 
 1. Create a watchOS App target in Xcode named `B3TickerWatch`.
 2. Add the Swift files from `watchos/B3TickerWatch` to the Watch App target.
-3. Set `AppConfig.apiBaseURL` to the deployed VPS URL, for example `http://203.0.113.10:8000`.
+3. Set `AppConfig.apiBaseURL` to the deployed VPS URL, for example `https://203.0.113.10`.
 4. Enable Push Notifications for the Watch App target.
 5. Use `development` for debug/ad-hoc builds and `production` for TestFlight/App Store in `AppConfig.deviceEnvironment`.
 
@@ -82,6 +82,29 @@ Create a local `local.env` from `local.env.example`, fill the VPS and OneSignal 
 ./scripts/deploy_vps.sh vps
 ```
 
-The script installs system packages, syncs the project, creates a Python venv, writes the remote `local.env`, installs a systemd service with one Uvicorn worker, and starts the API on `http://<VPS_HOST>:<SERVER_PORT>`.
+The script installs system packages, syncs the project, creates a Python venv, writes the remote `local.env`, installs a systemd service with one Uvicorn worker, and starts the API behind nginx when `PUBLIC_SERVER_PORT` differs from `SERVER_PORT` or HTTPS is enabled.
+
+For Oracle Cloud, keep the Python API private on `SERVER_PORT=8000`, expose nginx on `HTTP_SERVER_PORT=80` for certificate validation, and expose HTTPS on `HTTPS_SERVER_PORT=443`. With that setup, the public API URL is `https://<VPS_HOST>` and the health URL is `https://<VPS_HOST>/health`; do not use `:8000` unless Oracle ingress also allows port 8000.
+
+The deploy script waits for `http://127.0.0.1:<SERVER_PORT>/health` from inside the VPS, then verifies the public health URL from your machine. If the internal check passes but the public URL fails, check Oracle ingress rules and any OS firewall for `80/tcp` and `443/tcp`. By default `HOST_FIREWALL_ALLOW_PORTS=80,443` attempts to open both ports through UFW when present and iptables when UFW is absent; set `HOST_FIREWALL_ALLOW_PORTS=false` to skip that step.
+
+HTTPS uses a Let's Encrypt IP address certificate requested with Certbot's `--ip-address` and `--preferred-profile shortlived` flags. These certificates are valid for about six days, so the deploy script installs a systemd renewal timer named `<SERVICE_NAME>-cert-renew.timer`.
+
+Useful remote diagnostics:
+
+```bash
+sudo systemctl status b3-watch-api --no-pager -l
+sudo journalctl -u b3-watch-api -n 120 --no-pager
+sudo ss -ltnp | grep ':8000 '
+sudo ss -ltnp | grep ':80 '
+sudo systemctl status nginx --no-pager -l
+sudo systemctl list-timers '*cert-renew*'
+sudo ufw status verbose
+sudo iptables -S INPUT
+curl -fsS http://127.0.0.1:8000/health
+curl -fsS http://127.0.0.1/health
+curl -fsS https://127.0.0.1/health -k
+curl -fsS https://203.0.113.10/health
+```
 
 This is designed for a small single-node VPS with 1 vCPU and 6 GB RAM. Use the IP address directly; no domain is required.

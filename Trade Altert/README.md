@@ -4,7 +4,7 @@ This folder contains the native iOS companion app, the standalone-capable watchO
 
 ## Setup
 
-1. Set `AppConfig.apiBaseURL` in both app targets to the VPS URL, for example `http://203.0.113.10:8000`.
+1. Set `AppConfig.apiBaseURL` in both app targets to the VPS URL, for example `https://203.0.113.10`.
 2. Set the watch app `AppConfig.deviceEnvironment` to `development` for debug/ad-hoc builds and `production` for App Store/TestFlight builds.
 3. Keep Push Notifications enabled for the iOS and watchOS targets.
 
