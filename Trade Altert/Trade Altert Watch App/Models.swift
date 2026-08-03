@@ -47,7 +47,9 @@ enum AlertMetric: String, Codable, CaseIterable, Identifiable {
     case percent
 
     var id: String { rawValue }
-    var label: String { self == .price ? "Price" : "Percent" }
+    var label: String {
+        AppLanguage.shared.text(self == .price ? "metric.price" : "metric.percent")
+    }
 }
 
 enum AlertOperator: String, Codable, CaseIterable, Identifiable {
@@ -55,7 +57,9 @@ enum AlertOperator: String, Codable, CaseIterable, Identifiable {
     case lte
 
     var id: String { rawValue }
-    var label: String { self == .gte ? "Above" : "Below" }
+    var label: String {
+        AppLanguage.shared.text(self == .gte ? "operator.gte" : "operator.lte")
+    }
 }
 
 struct AlertRule: Codable, Identifiable {

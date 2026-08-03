@@ -25,11 +25,15 @@ final class CompanionAppModel: ObservableObject {
     }
 
     var iosRegistrationStatus: String {
-        preferences?.iosRegistered == true ? "Registered" : "Not registered"
+        preferences?.iosRegistered == true
+            ? AppLanguage.shared.text("status.registered")
+            : AppLanguage.shared.text("status.not_registered")
     }
 
     var watchRegistrationStatus: String {
-        preferences?.watchosRegistered == true ? "Registered" : "Not registered"
+        preferences?.watchosRegistered == true
+            ? AppLanguage.shared.text("status.registered")
+            : AppLanguage.shared.text("status.not_registered")
     }
 
     private init() {
@@ -146,7 +150,7 @@ final class CompanionAppModel: ObservableObject {
         if enabled {
             let accepted = await OneSignalService.shared.requestPushPermission()
             guard accepted else {
-                errorMessage = "Notifications are disabled for this iPhone."
+                errorMessage = AppLanguage.shared.text("message.notifications_disabled")
                 return
             }
         }

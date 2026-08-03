@@ -2,6 +2,7 @@ import SwiftUI
 
 struct AlertEditorView: View {
     @EnvironmentObject private var model: CompanionAppModel
+    @EnvironmentObject private var language: AppLanguage
     @Environment(\.dismiss) private var dismiss
 
     let ticker: String
@@ -40,45 +41,52 @@ struct AlertEditorView: View {
     var body: some View {
         Form {
             Section {
-                Toggle("Enabled", isOn: $enabled)
+                Toggle(language.text("label.enabled"), isOn: $enabled)
 
-                Picker("Metric", selection: $metric) {
+                Picker(language.text("label.metric"), selection: $metric) {
                     ForEach(AlertMetric.allCases) { metric in
                         Text(metric.label).tag(metric)
                     }
                 }
                 .pickerStyle(.segmented)
 
-                Picker("Target", selection: $alertOperator) {
+                Picker(language.text("label.target"), selection: $alertOperator) {
                     ForEach(AlertOperator.allCases) { op in
                         Text(op.label).tag(op)
                     }
                 }
                 .pickerStyle(.segmented)
 
-                TextField(metric == .price ? "BRL" : "Percent", value: $threshold, format: .number)
+                TextField(
+                    metric == .price ? language.text("label.brl") : language.text("label.percent"),
+                    value: $threshold,
+                    format: .number
+                )
                     .keyboardType(.decimalPad)
             }
 
-            Section("Week") {
+            Section(language.text("section.week")) {
                 WeekdayPicker(selected: $weekdays)
             }
 
-            Section("Window") {
-                DatePicker("Start", selection: $startDate, displayedComponents: .hourAndMinute)
-                DatePicker("End", selection: $endDate, displayedComponents: .hourAndMinute)
-                Stepper("Every \(frequency)m", value: $frequency, in: 1...240, step: 5)
-                Stepper("Cooldown \(cooldown)m", value: $cooldown, in: 0...1440, step: 15)
+            Section(language.text("section.window")) {
+                DatePicker(language.text("label.start"), selection: $startDate, displayedComponents: .hourAndMinute)
+                DatePicker(language.text("label.end"), selection: $endDate, displayedComponents: .hourAndMinute)
+                Stepper(language.everyMinutes(frequency), value: $frequency, in: 1...240, step: 5)
+                Stepper(language.cooldownMinutes(cooldown), value: $cooldown, in: 0...1440, step: 15)
             }
 
             Button {
                 Task { await save() }
             } label: {
-                Label(isEditing ? "Update" : "Save", systemImage: "checkmark")
+                Label(
+                    isEditing ? language.text("action.update") : language.text("action.save"),
+                    systemImage: "checkmark"
+                )
             }
             .disabled(weekdays.isEmpty)
         }
-        .navigationTitle(isEditing ? "Edit Alert" : ticker)
+        .navigationTitle(isEditing ? language.text("title.edit_alert") : ticker)
     }
 
     private func save() async {
@@ -140,27 +148,19 @@ struct AlertEditorView: View {
 }
 
 struct WeekdayPicker: View {
+    @EnvironmentObject private var language: AppLanguage
+
     @Binding var selected: Set<Int>
 
-    private let days = [
-        (1, "Mon"),
-        (2, "Tue"),
-        (3, "Wed"),
-        (4, "Thu"),
-        (5, "Fri"),
-        (6, "Sat"),
-        (7, "Sun"),
-    ]
-
     var body: some View {
-        ForEach(days, id: \.0) { value, label in
-            Toggle(label, isOn: Binding(
-                get: { selected.contains(value) },
+        ForEach(1...7, id: \.self) { day in
+            Toggle(language.text("weekday.\(day)"), isOn: Binding(
+                get: { selected.contains(day) },
                 set: { isOn in
                     if isOn {
-                        selected.insert(value)
+                        selected.insert(day)
                     } else {
-                        selected.remove(value)
+                        selected.remove(day)
                     }
                 }
             ))

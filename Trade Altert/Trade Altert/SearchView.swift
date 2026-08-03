@@ -2,14 +2,15 @@ import SwiftUI
 
 struct SearchView: View {
     @EnvironmentObject private var model: CompanionAppModel
+    @EnvironmentObject private var language: AppLanguage
     @State private var query = ""
 
     var body: some View {
         List {
             if query.trimmingCharacters(in: .whitespacesAndNewlines).count < 2 {
-                ContentUnavailableView("Search B3 Tickers", systemImage: "magnifyingglass")
+                ContentUnavailableView(language.text("empty.search"), systemImage: "magnifyingglass")
             } else if model.searchResults.isEmpty && !model.isLoading {
-                ContentUnavailableView("No Results", systemImage: "magnifyingglass")
+                ContentUnavailableView(language.text("empty.no_results"), systemImage: "magnifyingglass")
             } else {
                 ForEach(model.searchResults) { company in
                     NavigationLink {
@@ -21,14 +22,14 @@ struct SearchView: View {
                         Button {
                             Task { await model.addFavorite(company.ticker) }
                         } label: {
-                            Label("Track", systemImage: "star")
+                            Label(language.text("action.track"), systemImage: "star")
                         }
                     }
                 }
             }
         }
-        .navigationTitle("Search")
-        .searchable(text: $query, prompt: "Ticker or company")
+        .navigationTitle(language.text("title.search"))
+        .searchable(text: $query, prompt: Text(language.text("prompt.search")))
         .onSubmit(of: .search) {
             Task { await model.search(query) }
         }

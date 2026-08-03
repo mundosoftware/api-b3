@@ -12,11 +12,14 @@ import WatchKit
 struct Trade_Altert_Watch_AppApp: App {
     @WKExtensionDelegateAdaptor(ExtensionDelegate.self) var extensionDelegate
     @StateObject private var model = AppModel.shared
+    @StateObject private var language = AppLanguage.shared
 
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environmentObject(model)
+                .environmentObject(language)
+                .environment(\.locale, language.locale)
                 .task {
                     await model.bootstrap()
                 }

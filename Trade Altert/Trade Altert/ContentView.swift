@@ -9,6 +9,7 @@ import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject private var model: CompanionAppModel
+    @EnvironmentObject private var language: AppLanguage
     @State private var showOneSignalIntegrationAlert = false
     @State private var pushSubscriptionObserver: OneSignalPushSubscriptionObserver?
 
@@ -18,21 +19,21 @@ struct ContentView: View {
                 TrackedCompaniesView()
             }
             .tabItem {
-                Label("Tracked", systemImage: "star")
+                Label(language.text("tab.tracked"), systemImage: "star")
             }
 
             NavigationStack {
                 SearchView()
             }
             .tabItem {
-                Label("Search", systemImage: "magnifyingglass")
+                Label(language.text("tab.search"), systemImage: "magnifyingglass")
             }
 
             NavigationStack {
                 NotificationSettingsView()
             }
             .tabItem {
-                Label("Notifications", systemImage: "bell")
+                Label(language.text("tab.notifications"), systemImage: "bell")
             }
         }
         .onAppear(perform: configureOneSignalVerification)
@@ -43,24 +44,24 @@ struct ContentView: View {
         .onChange(of: model.iosNotificationsEnabled) { _ in
             refreshOneSignalIntegrationAlert()
         }
-        .alert("Quase pronto", isPresented: $showOneSignalIntegrationAlert) {
-            Button("Allow Notifications") {
+        .alert(language.text("title.almost_ready"), isPresented: $showOneSignalIntegrationAlert) {
+            Button(language.text("action.allow_notifications")) {
                 Task {
                     await model.updateIOSNotificationsEnabled(true)
                     refreshOneSignalIntegrationAlert()
                 }
             }
-            Button("Not Now", role: .cancel) {
+            Button(language.text("action.not_now"), role: .cancel) {
                 showOneSignalIntegrationAlert = false
             }
         } message: {
-            Text("Precisamos de sua permissão para enviar notificações.")
+            Text(language.text("message.notification_permission"))
         }
-        .alert("Error", isPresented: Binding(
+        .alert(language.text("title.error"), isPresented: Binding(
             get: { model.errorMessage != nil },
             set: { if !$0 { model.errorMessage = nil } }
         )) {
-            Button("OK", role: .cancel) {}
+            Button(language.text("action.ok"), role: .cancel) {}
         } message: {
             Text(model.errorMessage ?? "")
         }
@@ -98,5 +99,6 @@ struct ContentView_Previews: PreviewProvider {
     static var previews: some View {
         ContentView()
             .environmentObject(CompanionAppModel.shared)
+            .environmentObject(AppLanguage.shared)
     }
 }

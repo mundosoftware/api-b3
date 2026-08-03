@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject private var model: AppModel
+    @EnvironmentObject private var language: AppLanguage
 
     var body: some View {
         NavigationStack {
@@ -9,12 +10,18 @@ struct ContentView: View {
                 NavigationLink {
                     SearchView()
                 } label: {
-                    Label("Search", systemImage: "magnifyingglass")
+                    Label(language.text("tab.search"), systemImage: "magnifyingglass")
                 }
 
-                Section("Tracked") {
+                NavigationLink {
+                    WatchSettingsView()
+                } label: {
+                    Label(language.text("tab.settings"), systemImage: "gearshape")
+                }
+
+                Section(language.text("section.tracked")) {
                     if model.favorites.isEmpty {
-                        Text("No tickers")
+                        Text(language.text("empty.no_tickers"))
                             .foregroundStyle(.secondary)
                     } else {
                         ForEach(model.favorites) { favorite in
@@ -33,7 +40,7 @@ struct ContentView: View {
                     }
                 }
             }
-            .navigationTitle("B3 Watch")
+            .navigationTitle(language.text("app.title"))
             .toolbar {
                 if model.isLoading {
                     ProgressView()
@@ -42,11 +49,11 @@ struct ContentView: View {
             .refreshable {
                 await model.refreshFavorites()
             }
-            .alert("Error", isPresented: Binding(
+            .alert(language.text("title.error"), isPresented: Binding(
                 get: { model.errorMessage != nil },
                 set: { if !$0 { model.errorMessage = nil } }
             )) {
-                Button("OK", role: .cancel) {}
+                Button(language.text("action.ok"), role: .cancel) {}
             } message: {
                 Text(model.errorMessage ?? "")
             }
@@ -85,5 +92,6 @@ struct ContentView_Previews: PreviewProvider {
     static var previews: some View {
         ContentView()
             .environmentObject(AppModel.shared)
+            .environmentObject(AppLanguage.shared)
     }
 }

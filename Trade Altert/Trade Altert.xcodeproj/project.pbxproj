@@ -236,9 +236,10 @@
 				};
 			};
 			buildConfigurationList = 779ABF5D302002C90018EDEF /* Build configuration list for PBXProject "Trade Altert" */;
-			developmentRegion = en;
+			developmentRegion = pt;
 			hasScannedForEncodings = 0;
 			knownRegions = (
+				pt,
 				en,
 				Base,
 			);

@@ -2,11 +2,12 @@ import SwiftUI
 
 struct SearchView: View {
     @EnvironmentObject private var model: AppModel
+    @EnvironmentObject private var language: AppLanguage
     @State private var query = ""
 
     var body: some View {
         List {
-            TextField("Ticker", text: $query)
+            TextField(language.text("label.ticker"), text: $query)
                 .onSubmit {
                     Task { await model.search(query) }
                 }
@@ -21,12 +22,12 @@ struct SearchView: View {
                     Button {
                         Task { await model.addFavorite(company.ticker) }
                     } label: {
-                        Label("Track", systemImage: "star")
+                        Label(language.text("action.track"), systemImage: "star")
                     }
                 }
             }
         }
-        .navigationTitle("Search")
+        .navigationTitle(language.text("title.search"))
         .onChange(of: query) { _, value in
             Task { await model.search(value) }
         }

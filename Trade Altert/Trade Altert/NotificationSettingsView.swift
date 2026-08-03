@@ -2,17 +2,18 @@ import SwiftUI
 
 struct NotificationSettingsView: View {
     @EnvironmentObject private var model: CompanionAppModel
+    @EnvironmentObject private var language: AppLanguage
 
     var body: some View {
         Form {
-            Section("Delivery") {
+            Section(language.text("section.delivery")) {
                 Toggle(
                     isOn: Binding(
                         get: { model.iosNotificationsEnabled },
                         set: { model.setIOSNotificationsEnabled($0) }
                     )
                 ) {
-                    Label("iPhone", systemImage: "iphone")
+                    Label(language.text("label.iphone"), systemImage: "iphone")
                 }
 
                 Toggle(
@@ -21,21 +22,37 @@ struct NotificationSettingsView: View {
                         set: { model.setWatchNotificationsEnabled($0) }
                     )
                 ) {
-                    Label("Apple Watch", systemImage: "applewatch")
+                    Label(language.text("label.apple_watch"), systemImage: "applewatch")
                 }
             }
 
-            Section("Devices") {
-                LabeledContent("iPhone", value: model.iosRegistrationStatus)
-                LabeledContent("Apple Watch", value: model.watchRegistrationStatus)
+            Section(language.text("section.devices")) {
+                LabeledContent(language.text("label.iphone"), value: model.iosRegistrationStatus)
+                LabeledContent(language.text("label.apple_watch"), value: model.watchRegistrationStatus)
             }
 
-            Section("Server") {
-                LabeledContent("Mode", value: AppConfig.environment == .debug ? "Debug" : "Production")
-                LabeledContent("API", value: AppConfig.apiBaseURL.absoluteString)
+            Section(language.text("section.language")) {
+                Picker(language.text("section.language"), selection: $language.code) {
+                    ForEach(AppLanguageCode.allCases) { code in
+                        Text(code.displayName).tag(code)
+                    }
+                }
+                .pickerStyle(.segmented)
             }
+
+            #if DEBUG
+            Section(language.text("section.server")) {
+                LabeledContent(
+                    language.text("label.mode"),
+                    value: AppConfig.environment == .debug
+                        ? language.text("label.debug")
+                        : language.text("label.production")
+                )
+                LabeledContent(language.text("label.api"), value: AppConfig.apiBaseURL.absoluteString)
+            }
+            #endif
         }
-        .navigationTitle("Notifications")
+        .navigationTitle(language.text("title.notifications"))
         .disabled(model.isLoading)
     }
 }

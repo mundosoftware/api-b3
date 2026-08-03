@@ -2,6 +2,7 @@ import SwiftUI
 
 struct CompanyDetailView: View {
     @EnvironmentObject private var model: CompanionAppModel
+    @EnvironmentObject private var language: AppLanguage
     @State private var company: Company
 
     init(company: Company) {
@@ -42,15 +43,18 @@ struct CompanyDetailView: View {
                         }
                     }
                 } label: {
-                    Label(isFavorite ? "Untrack" : "Track", systemImage: isFavorite ? "star.fill" : "star")
+                    Label(
+                        isFavorite ? language.text("action.untrack") : language.text("action.track"),
+                        systemImage: isFavorite ? "star.fill" : "star"
+                    )
                 }
             }
 
-            Section("Alerts") {
+            Section(language.text("section.alerts")) {
                 NavigationLink {
                     AlertEditorView(ticker: company.ticker, currentPrice: company.lastPrice)
                 } label: {
-                    Label("New Alert", systemImage: "bell.badge")
+                    Label(language.text("action.new_alert"), systemImage: "bell.badge")
                 }
 
                 ForEach(model.alertsByTicker[company.ticker] ?? []) { alert in
@@ -63,7 +67,7 @@ struct CompanyDetailView: View {
                             Button(role: .destructive) {
                                 Task { await model.deleteAlert(alert) }
                             } label: {
-                                Label("Delete", systemImage: "trash")
+                                Label(language.text("action.delete"), systemImage: "trash")
                             }
                         }
                 }
@@ -90,21 +94,25 @@ struct CompanyDetailView: View {
 }
 
 struct AlertRow: View {
+    @EnvironmentObject private var language: AppLanguage
+
     let alert: AlertRule
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
-                Text(alert.metric == .price ? "Price \(alert.operator.label)" : "Move \(alert.operator.label)")
+                Text(alert.metric == .price
+                    ? "\(language.text("alert.price_prefix")) \(alert.operator.label)"
+                    : "\(language.text("alert.move_prefix")) \(alert.operator.label)")
                 if !alert.enabled {
-                    Text("Paused")
+                    Text(language.text("alert.paused"))
                 }
             }
             .font(.caption)
             .foregroundStyle(.secondary)
             Text(alert.metric == .price ? currency(alert.threshold) : percent(alert.threshold))
                 .font(.headline)
-            Text("\(alert.startTime)-\(alert.endTime) every \(alert.frequencyMinutes)m")
+            Text(language.alertWindow(start: alert.startTime, end: alert.endTime, frequency: alert.frequencyMinutes))
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }

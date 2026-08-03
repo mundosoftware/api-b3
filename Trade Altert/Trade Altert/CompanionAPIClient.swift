@@ -7,7 +7,7 @@ enum CompanionAPIError: Error, LocalizedError {
     var errorDescription: String? {
         switch self {
         case .invalidURL:
-            return "Invalid API URL"
+            return AppLanguage.shared.text("api.invalid_url")
         case let .badResponse(status, message):
             return "HTTP \(status): \(message)"
         }

@@ -2,12 +2,13 @@ import SwiftUI
 
 struct TrackedCompaniesView: View {
     @EnvironmentObject private var model: CompanionAppModel
+    @EnvironmentObject private var language: AppLanguage
 
     var body: some View {
         List {
             Section {
                 if model.favorites.isEmpty {
-                    ContentUnavailableView("No Tracked Companies", systemImage: "star")
+                    ContentUnavailableView(language.text("empty.no_tracked"), systemImage: "star")
                 } else {
                     ForEach(model.favorites) { favorite in
                         NavigationLink {
@@ -25,7 +26,7 @@ struct TrackedCompaniesView: View {
                 }
             }
         }
-        .navigationTitle("Tracked")
+        .navigationTitle(language.text("title.tracked"))
         .toolbar {
             if model.isLoading {
                 ProgressView()
