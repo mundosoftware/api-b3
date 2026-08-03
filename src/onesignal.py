@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from collections.abc import Sequence
 from typing import Any
 
 import requests
@@ -79,6 +80,7 @@ class OneSignalClient:
         title: str,
         body: str,
         data: dict[str, Any] | None = None,
+        subscription_ids: Sequence[str] | None = None,
     ) -> OneSignalNotification:
         if not self.configured:
             return OneSignalNotification(notification_id=None, raw_response={"skipped": "not_configured"})
@@ -86,11 +88,14 @@ class OneSignalClient:
         payload = {
             "app_id": self.settings.onesignal_app_id,
             "target_channel": "push",
-            "include_aliases": {"external_id": [user_id]},
             "headings": {"en": title, "pt": title},
             "contents": {"en": body, "pt": body},
             "data": data or {},
         }
+        if subscription_ids is not None:
+            payload["include_subscription_ids"] = list(subscription_ids)
+        else:
+            payload["include_aliases"] = {"external_id": [user_id]}
         response = requests.post(
             "https://api.onesignal.com/notifications?c=push",
             json=payload,

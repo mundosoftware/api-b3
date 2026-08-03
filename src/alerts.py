@@ -148,11 +148,26 @@ class AlertEngine:
             percent = evaluation.percent_change or 0.0
             body = f"{rule.ticker} moved {comparator} {rule.threshold:.2f}%: {percent:.2f}%"
 
+        subscription_ids: list[str] | None = None
+        if self.onesignal.configured:
+            subscription_ids = self.repository.list_enabled_notification_subscription_ids(rule.user_id)
+            if not subscription_ids:
+                self.repository.log_notification(
+                    user_id=rule.user_id,
+                    alert_rule_id=rule.id,
+                    ticker=rule.ticker,
+                    title=title,
+                    body=body,
+                    status="no_enabled_devices",
+                )
+                return False
+
         try:
             notification = self.onesignal.send_push_to_user(
                 user_id=rule.user_id,
                 title=title,
                 body=body,
+                subscription_ids=subscription_ids,
                 data={
                     "ticker": rule.ticker,
                     "alert_rule_id": rule.id,

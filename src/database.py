@@ -44,6 +44,12 @@ def ticker_catalog() -> list[dict[str, str]]:
     return sorted(entries.values(), key=lambda row: row["ticker"])
 
 
+def _ensure_column(db: sqlite3.Connection, table: str, column: str, definition: str) -> None:
+    columns = {row["name"] for row in db.execute(f"PRAGMA table_info({table})")}
+    if column not in columns:
+        db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+
+
 class Database:
     def __init__(self, settings: Settings | None = None):
         self.settings = settings or get_settings()
@@ -92,9 +98,22 @@ def init_db(settings: Settings | None = None) -> None:
                 apns_token TEXT,
                 onesignal_subscription_id TEXT,
                 environment TEXT NOT NULL DEFAULT 'production',
+                device_model TEXT,
+                device_os TEXT,
+                app_version TEXT,
                 created_at TEXT NOT NULL,
                 last_seen_at TEXT NOT NULL,
                 UNIQUE(user_id, platform, apns_token)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_user_devices_subscription
+                ON user_devices(user_id, platform, onesignal_subscription_id);
+
+            CREATE TABLE IF NOT EXISTS notification_preferences (
+                user_id TEXT PRIMARY KEY REFERENCES users(user_id) ON DELETE CASCADE,
+                ios_enabled INTEGER NOT NULL DEFAULT 1,
+                watchos_enabled INTEGER NOT NULL DEFAULT 1,
+                updated_at TEXT NOT NULL
             );
 
             CREATE TABLE IF NOT EXISTS favorites (
@@ -143,6 +162,9 @@ def init_db(settings: Settings | None = None) -> None:
             );
             """
         )
+        _ensure_column(db, "user_devices", "device_model", "TEXT")
+        _ensure_column(db, "user_devices", "device_os", "TEXT")
+        _ensure_column(db, "user_devices", "app_version", "TEXT")
         now = utc_now_iso()
         for company in ticker_catalog():
             db.execute(

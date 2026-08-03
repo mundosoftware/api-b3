@@ -3,7 +3,12 @@ from typing import Any
 
 from src.config import Settings, get_settings
 from src.database import Database, normalize_ticker, utc_now_iso
-from src.models import AlertRuleCreateRequest, AlertRuleOut, AlertRuleUpdateRequest
+from src.models import (
+    AlertRuleCreateRequest,
+    AlertRuleOut,
+    AlertRuleUpdateRequest,
+    NotificationPreferencesUpdateRequest,
+)
 
 
 def company_from_row(row: sqlite3.Row) -> dict[str, Any]:
@@ -331,10 +336,16 @@ class Repository:
     def save_device(
         self,
         user_id: str,
-        apns_token: str,
+        platform: str,
+        device_token: str,
         environment: str,
         onesignal_subscription_id: str | None,
+        device_model: str | None = None,
+        device_os: str | None = None,
+        app_version: str | None = None,
     ) -> None:
+        if platform not in {"ios", "watchos"}:
+            raise ValueError("unsupported device platform")
         self.upsert_user(user_id)
         now = utc_now_iso()
         with self.database.connect() as db:
@@ -342,19 +353,144 @@ class Repository:
                 """
                 INSERT INTO user_devices(
                     user_id, platform, apns_token, onesignal_subscription_id,
-                    environment, created_at, last_seen_at
+                    environment, device_model, device_os, app_version,
+                    created_at, last_seen_at
                 )
-                VALUES (?, 'watchos', ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(user_id, platform, apns_token) DO UPDATE SET
                     onesignal_subscription_id = COALESCE(
                         excluded.onesignal_subscription_id,
                         user_devices.onesignal_subscription_id
                     ),
                     environment = excluded.environment,
+                    device_model = COALESCE(excluded.device_model, user_devices.device_model),
+                    device_os = COALESCE(excluded.device_os, user_devices.device_os),
+                    app_version = COALESCE(excluded.app_version, user_devices.app_version),
                     last_seen_at = excluded.last_seen_at
                 """,
-                (user_id, apns_token, onesignal_subscription_id, environment, now, now),
+                (
+                    user_id,
+                    platform,
+                    device_token,
+                    onesignal_subscription_id,
+                    environment,
+                    device_model,
+                    device_os,
+                    app_version,
+                    now,
+                    now,
+                ),
             )
+
+    def get_notification_preferences(self, user_id: str) -> dict[str, Any]:
+        self.upsert_user(user_id)
+        now = utc_now_iso()
+        with self.database.connect() as db:
+            self._ensure_notification_preferences(db, user_id, now)
+            row = db.execute(
+                """
+                SELECT
+                    p.user_id,
+                    p.ios_enabled,
+                    p.watchos_enabled,
+                    p.updated_at,
+                    EXISTS(
+                        SELECT 1 FROM user_devices d
+                        WHERE d.user_id = p.user_id
+                            AND d.platform = 'ios'
+                            AND d.onesignal_subscription_id IS NOT NULL
+                            AND d.onesignal_subscription_id != ''
+                    ) AS ios_registered,
+                    EXISTS(
+                        SELECT 1 FROM user_devices d
+                        WHERE d.user_id = p.user_id
+                            AND d.platform = 'watchos'
+                            AND d.onesignal_subscription_id IS NOT NULL
+                            AND d.onesignal_subscription_id != ''
+                    ) AS watchos_registered
+                FROM notification_preferences p
+                WHERE p.user_id = ?
+                """,
+                (user_id,),
+            ).fetchone()
+            return self._preference_dict(row)
+
+    def update_notification_preferences(
+        self, user_id: str, request: NotificationPreferencesUpdateRequest
+    ) -> dict[str, Any]:
+        self.upsert_user(user_id)
+        now = utc_now_iso()
+        with self.database.connect() as db:
+            self._ensure_notification_preferences(db, user_id, now)
+            if request.ios_enabled is not None or request.watchos_enabled is not None:
+                db.execute(
+                    """
+                    UPDATE notification_preferences SET
+                        ios_enabled = COALESCE(?, ios_enabled),
+                        watchos_enabled = COALESCE(?, watchos_enabled),
+                        updated_at = ?
+                    WHERE user_id = ?
+                    """,
+                    (
+                        None if request.ios_enabled is None else int(request.ios_enabled),
+                        None if request.watchos_enabled is None else int(request.watchos_enabled),
+                        now,
+                        user_id,
+                    ),
+                )
+            row = db.execute(
+                """
+                SELECT
+                    p.user_id,
+                    p.ios_enabled,
+                    p.watchos_enabled,
+                    p.updated_at,
+                    EXISTS(
+                        SELECT 1 FROM user_devices d
+                        WHERE d.user_id = p.user_id
+                            AND d.platform = 'ios'
+                            AND d.onesignal_subscription_id IS NOT NULL
+                            AND d.onesignal_subscription_id != ''
+                    ) AS ios_registered,
+                    EXISTS(
+                        SELECT 1 FROM user_devices d
+                        WHERE d.user_id = p.user_id
+                            AND d.platform = 'watchos'
+                            AND d.onesignal_subscription_id IS NOT NULL
+                            AND d.onesignal_subscription_id != ''
+                    ) AS watchos_registered
+                FROM notification_preferences p
+                WHERE p.user_id = ?
+                """,
+                (user_id,),
+            ).fetchone()
+            return self._preference_dict(row)
+
+    def list_enabled_notification_subscription_ids(self, user_id: str) -> list[str]:
+        preferences = self.get_notification_preferences(user_id)
+        platforms: list[str] = []
+        if preferences["ios_enabled"]:
+            platforms.append("ios")
+        if preferences["watchos_enabled"]:
+            platforms.append("watchos")
+        if not platforms:
+            return []
+
+        placeholders = ",".join("?" for _ in platforms)
+        with self.database.connect() as db:
+            rows = db.execute(
+                f"""
+                SELECT DISTINCT onesignal_subscription_id
+                FROM user_devices
+                WHERE user_id = ?
+                    AND platform IN ({placeholders})
+                    AND onesignal_subscription_id IS NOT NULL
+                    AND onesignal_subscription_id != ''
+                ORDER BY platform, last_seen_at DESC
+                """,
+                (user_id, *platforms),
+            ).fetchall()
+            return [row["onesignal_subscription_id"] for row in rows]
 
     def log_notification(
         self,
@@ -414,3 +550,25 @@ class Repository:
             """,
             (ticker, ticker),
         )
+
+    def _ensure_notification_preferences(
+        self, db: sqlite3.Connection, user_id: str, now: str
+    ) -> None:
+        db.execute(
+            """
+            INSERT INTO notification_preferences(user_id, ios_enabled, watchos_enabled, updated_at)
+            VALUES (?, 1, 1, ?)
+            ON CONFLICT(user_id) DO NOTHING
+            """,
+            (user_id, now),
+        )
+
+    def _preference_dict(self, row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "user_id": row["user_id"],
+            "ios_enabled": bool(row["ios_enabled"]),
+            "watchos_enabled": bool(row["watchos_enabled"]),
+            "ios_registered": bool(row["ios_registered"]),
+            "watchos_registered": bool(row["watchos_registered"]),
+            "updated_at": row["updated_at"],
+        }

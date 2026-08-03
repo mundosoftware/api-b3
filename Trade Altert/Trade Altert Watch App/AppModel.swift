@@ -13,7 +13,7 @@ final class AppModel: ObservableObject {
     @Published var isLoading = false
     @Published var errorMessage: String?
 
-    let userId: String
+    @Published private(set) var userId: String
     private let api = APIClient.shared
 
     private init() {
@@ -27,6 +27,8 @@ final class AppModel: ObservableObject {
     }
 
     func bootstrap() async {
+        WatchCompanionSyncService.shared.start(model: self)
+        WatchCompanionSyncService.shared.sendUserId(userId)
         await run {
             try await self.api.upsertUser(userId: self.userId, timezone: TimeZone.current.identifier)
             await self.requestNotificationPermission()
@@ -88,6 +90,10 @@ final class AppModel: ObservableObject {
         await run {
             try await self.api.registerDevice(userId: self.userId, token: apnsToken)
         }
+    }
+
+    func resendUserIdToCompanion() {
+        WatchCompanionSyncService.shared.sendUserId(userId)
     }
 
     private func requestNotificationPermission() async {

@@ -46,10 +46,31 @@ class DeviceRegistrationRequest(BaseModel):
     app_version: str | None = Field(default=None, max_length=40)
 
 
+class IOSDeviceRegistrationRequest(BaseModel):
+    onesignal_subscription_id: str = Field(min_length=16, max_length=128)
+    device_model: str | None = Field(default=None, max_length=80)
+    device_os: str | None = Field(default=None, max_length=40)
+    app_version: str | None = Field(default=None, max_length=40)
+
+
 class DeviceRegistrationOut(BaseModel):
     user_id: str
     onesignal_configured: bool
     onesignal_subscription_id: str | None = None
+
+
+class NotificationPreferencesUpdateRequest(BaseModel):
+    ios_enabled: bool | None = None
+    watchos_enabled: bool | None = None
+
+
+class NotificationPreferencesOut(BaseModel):
+    user_id: str
+    ios_enabled: bool
+    watchos_enabled: bool
+    ios_registered: bool
+    watchos_registered: bool
+    updated_at: str
 
 
 class FavoriteOut(BaseModel):

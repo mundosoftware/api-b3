@@ -20,6 +20,9 @@ from src.models import (
     FavoriteCreateRequest,
     FavoriteListOut,
     FavoriteOut,
+    IOSDeviceRegistrationRequest,
+    NotificationPreferencesOut,
+    NotificationPreferencesUpdateRequest,
     QuoteOut,
     RunChecksOut,
     UserOut,
@@ -110,14 +113,50 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
         repository.save_device(
             user_id=user_id,
-            apns_token=request.apns_token,
+            platform="watchos",
+            device_token=request.apns_token,
             environment=request.environment,
             onesignal_subscription_id=registration.subscription_id,
+            device_model=request.device_model,
+            device_os=request.device_os,
+            app_version=request.app_version,
         )
         return DeviceRegistrationOut(
             user_id=user_id,
             onesignal_configured=onesignal.configured,
             onesignal_subscription_id=registration.subscription_id,
+        )
+
+    @app.post("/users/{user_id}/devices/ios", response_model=DeviceRegistrationOut)
+    async def register_ios_device(
+        user_id: str, request: IOSDeviceRegistrationRequest
+    ) -> DeviceRegistrationOut:
+        repository.save_device(
+            user_id=user_id,
+            platform="ios",
+            device_token=request.onesignal_subscription_id,
+            environment="production",
+            onesignal_subscription_id=request.onesignal_subscription_id,
+            device_model=request.device_model,
+            device_os=request.device_os,
+            app_version=request.app_version,
+        )
+        return DeviceRegistrationOut(
+            user_id=user_id,
+            onesignal_configured=onesignal.configured,
+            onesignal_subscription_id=request.onesignal_subscription_id,
+        )
+
+    @app.get("/users/{user_id}/notification-preferences", response_model=NotificationPreferencesOut)
+    async def get_notification_preferences(user_id: str) -> NotificationPreferencesOut:
+        return NotificationPreferencesOut(**repository.get_notification_preferences(user_id))
+
+    @app.put("/users/{user_id}/notification-preferences", response_model=NotificationPreferencesOut)
+    async def update_notification_preferences(
+        user_id: str, request: NotificationPreferencesUpdateRequest
+    ) -> NotificationPreferencesOut:
+        return NotificationPreferencesOut(
+            **repository.update_notification_preferences(user_id, request)
         )
 
     @app.get("/users/{user_id}/favorites", response_model=FavoriteListOut)
