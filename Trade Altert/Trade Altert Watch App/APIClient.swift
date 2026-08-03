@@ -71,6 +71,10 @@ actor APIClient {
         try await send("/users/\(userId)/alerts", method: "POST", body: request)
     }
 
+    func updateAlert(userId: String, alertId: Int, request: AlertRuleUpdateRequest) async throws -> AlertRule {
+        try await send("/users/\(userId)/alerts/\(alertId)", method: "PATCH", body: request)
+    }
+
     func deleteAlert(userId: String, alertId: Int) async throws {
         try await sendNoContent("/users/\(userId)/alerts/\(alertId)", method: "DELETE")
     }

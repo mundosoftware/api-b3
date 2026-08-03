@@ -194,6 +194,34 @@ struct AlertRuleCreateRequest: Encodable {
     }
 }
 
+struct AlertRuleUpdateRequest: Encodable {
+    let enabled: Bool
+    let metric: AlertMetric
+    let `operator`: AlertOperator
+    let threshold: Double
+    let baselinePrice: Double?
+    let weekdays: [Int]
+    let startTime: String
+    let endTime: String
+    let timezone: String
+    let frequencyMinutes: Int
+    let cooldownMinutes: Int
+
+    enum CodingKeys: String, CodingKey {
+        case enabled
+        case metric
+        case `operator`
+        case threshold
+        case baselinePrice = "baseline_price"
+        case weekdays
+        case startTime = "start_time"
+        case endTime = "end_time"
+        case timezone
+        case frequencyMinutes = "frequency_minutes"
+        case cooldownMinutes = "cooldown_minutes"
+    }
+}
+
 struct DeviceRegistrationResponse: Decodable {
     let userId: String
     let onesignalConfigured: Bool

@@ -6,25 +6,42 @@ struct AlertEditorView: View {
 
     let ticker: String
     let currentPrice: Double?
+    let alert: AlertRule?
 
-    @State private var metric: AlertMetric = .price
-    @State private var alertOperator: AlertOperator = .gte
+    @State private var enabled: Bool
+    @State private var metric: AlertMetric
+    @State private var alertOperator: AlertOperator
     @State private var threshold: Double
-    @State private var weekdays: Set<Int> = [1, 2, 3, 4, 5]
-    @State private var startDate = AlertEditorView.date(hour: 10, minute: 0)
-    @State private var endDate = AlertEditorView.date(hour: 18, minute: 0)
-    @State private var frequency = 15
-    @State private var cooldown = 60
+    @State private var weekdays: Set<Int>
+    @State private var startDate: Date
+    @State private var endDate: Date
+    @State private var frequency: Int
+    @State private var cooldown: Int
 
-    init(ticker: String, currentPrice: Double?) {
+    private var isEditing: Bool {
+        alert != nil
+    }
+
+    init(ticker: String, currentPrice: Double?, alert: AlertRule? = nil) {
         self.ticker = ticker
         self.currentPrice = currentPrice
-        _threshold = State(initialValue: currentPrice ?? 0)
+        self.alert = alert
+        _enabled = State(initialValue: alert?.enabled ?? true)
+        _metric = State(initialValue: alert?.metric ?? .price)
+        _alertOperator = State(initialValue: alert?.operator ?? .gte)
+        _threshold = State(initialValue: alert?.threshold ?? currentPrice ?? 0)
+        _weekdays = State(initialValue: Set(alert?.weekdays ?? [1, 2, 3, 4, 5]))
+        _startDate = State(initialValue: Self.date(from: alert?.startTime) ?? Self.date(hour: 10, minute: 0))
+        _endDate = State(initialValue: Self.date(from: alert?.endTime) ?? Self.date(hour: 18, minute: 0))
+        _frequency = State(initialValue: alert?.frequencyMinutes ?? 15)
+        _cooldown = State(initialValue: alert?.cooldownMinutes ?? 60)
     }
 
     var body: some View {
         Form {
             Section {
+                Toggle("Enabled", isOn: $enabled)
+
                 Picker("Metric", selection: $metric) {
                     ForEach(AlertMetric.allCases) { metric in
                         Text(metric.label).tag(metric)
@@ -57,27 +74,47 @@ struct AlertEditorView: View {
             Button {
                 Task { await save() }
             } label: {
-                Label("Save", systemImage: "checkmark")
+                Label(isEditing ? "Update" : "Save", systemImage: "checkmark")
             }
             .disabled(weekdays.isEmpty)
         }
-        .navigationTitle(ticker)
+        .navigationTitle(isEditing ? "Edit Alert" : ticker)
     }
 
     private func save() async {
+        let baseline = metric == .percent ? alert?.baselinePrice ?? currentPrice ?? alert?.lastPrice : nil
+        if let alert {
+            let request = AlertRuleUpdateRequest(
+                enabled: enabled,
+                metric: metric,
+                operator: alertOperator,
+                threshold: threshold,
+                baselinePrice: baseline,
+                weekdays: weekdays.sorted(),
+                startTime: Self.hhmm(startDate),
+                endTime: Self.hhmm(endDate),
+                timezone: TimeZone.current.identifier,
+                frequencyMinutes: frequency,
+                cooldownMinutes: cooldown
+            )
+            await model.updateAlert(alert, request: request)
+            dismiss()
+            return
+        }
+
         let request = AlertRuleCreateRequest(
             ticker: ticker,
             metric: metric,
             operator: alertOperator,
             threshold: threshold,
-            baselinePrice: metric == .percent ? currentPrice : nil,
+            baselinePrice: baseline,
             weekdays: weekdays.sorted(),
             startTime: Self.hhmm(startDate),
             endTime: Self.hhmm(endDate),
             timezone: TimeZone.current.identifier,
             frequencyMinutes: frequency,
             cooldownMinutes: cooldown,
-            enabled: true
+            enabled: enabled
         )
         await model.createAlert(request)
         dismiss()
@@ -90,6 +127,15 @@ struct AlertEditorView: View {
 
     private static func date(hour: Int, minute: Int) -> Date {
         Calendar.current.date(bySettingHour: hour, minute: minute, second: 0, of: Date()) ?? Date()
+    }
+
+    private static func date(from value: String?) -> Date? {
+        guard let value else { return nil }
+        let parts = value.split(separator: ":")
+        guard parts.count == 2, let hour = Int(parts[0]), let minute = Int(parts[1]) else {
+            return nil
+        }
+        return date(hour: hour, minute: minute)
     }
 }
 

@@ -8,6 +8,7 @@
 import Foundation
 import OneSignalFramework
 import UIKit
+import UserNotifications
 
 final class OneSignalService {
     static let shared = OneSignalService()
@@ -30,6 +31,30 @@ final class OneSignalService {
 
     var currentPushSubscriptionId: String? {
         OneSignal.User.pushSubscription.id
+    }
+
+    var hasUsablePushSubscription: Bool {
+        guard let id = currentPushSubscriptionId else { return false }
+        return !id.isEmpty && !id.hasPrefix("local-")
+    }
+
+    func notificationAuthorizationStatus() async -> UNAuthorizationStatus {
+        await withCheckedContinuation { continuation in
+            UNUserNotificationCenter.current().getNotificationSettings { settings in
+                continuation.resume(returning: settings.authorizationStatus)
+            }
+        }
+    }
+
+    func hasNotificationAuthorization() async -> Bool {
+        switch await notificationAuthorizationStatus() {
+        case .authorized, .provisional, .ephemeral:
+            return true
+        case .denied, .notDetermined:
+            return false
+        @unknown default:
+            return false
+        }
     }
 
     func requestPushPermission() async -> Bool {

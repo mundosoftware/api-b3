@@ -54,7 +54,11 @@ struct CompanyDetailView: View {
                 }
 
                 ForEach(model.alertsByTicker[company.ticker] ?? []) { alert in
-                    AlertRow(alert: alert)
+                    NavigationLink {
+                        AlertEditorView(ticker: company.ticker, currentPrice: company.lastPrice, alert: alert)
+                    } label: {
+                        AlertRow(alert: alert)
+                    }
                         .swipeActions {
                             Button(role: .destructive) {
                                 Task { await model.deleteAlert(alert) }
@@ -90,9 +94,14 @@ struct AlertRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(alert.metric == .price ? "Price \(alert.operator.label)" : "Move \(alert.operator.label)")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            HStack {
+                Text(alert.metric == .price ? "Price \(alert.operator.label)" : "Move \(alert.operator.label)")
+                if !alert.enabled {
+                    Text("Paused")
+                }
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
             Text(alert.metric == .price ? currency(alert.threshold) : percent(alert.threshold))
                 .font(.headline)
             Text("\(alert.startTime)-\(alert.endTime) every \(alert.frequencyMinutes)m")

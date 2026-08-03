@@ -97,6 +97,13 @@ final class CompanionAppModel: ObservableObject {
         }
     }
 
+    func updateAlert(_ alert: AlertRule, request: AlertRuleUpdateRequest) async {
+        await run {
+            _ = try await self.api.updateAlert(userId: self.userId, alertId: alert.id, request: request)
+            self.alertsByTicker[alert.ticker] = try await self.api.alerts(userId: self.userId, ticker: alert.ticker)
+        }
+    }
+
     func deleteAlert(_ alert: AlertRule) async {
         await run {
             try await self.api.deleteAlert(userId: self.userId, alertId: alert.id)
@@ -135,7 +142,7 @@ final class CompanionAppModel: ObservableObject {
         }
     }
 
-    private func updateIOSNotificationsEnabled(_ enabled: Bool) async {
+    func updateIOSNotificationsEnabled(_ enabled: Bool) async {
         if enabled {
             let accepted = await OneSignalService.shared.requestPushPermission()
             guard accepted else {

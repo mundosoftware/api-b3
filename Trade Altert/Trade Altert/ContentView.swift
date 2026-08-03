@@ -38,13 +38,23 @@ struct ContentView: View {
         .onAppear(perform: configureOneSignalVerification)
         .task {
             await model.bootstrap()
+            refreshOneSignalIntegrationAlert()
         }
-        .alert("OneSignal Integration Complete", isPresented: $showOneSignalIntegrationAlert) {
+        .onChange(of: model.iosNotificationsEnabled) { _ in
+            refreshOneSignalIntegrationAlert()
+        }
+        .alert("Quase pronto", isPresented: $showOneSignalIntegrationAlert) {
             Button("Allow Notifications") {
-                model.setIOSNotificationsEnabled(true)
+                Task {
+                    await model.updateIOSNotificationsEnabled(true)
+                    refreshOneSignalIntegrationAlert()
+                }
+            }
+            Button("Not Now", role: .cancel) {
+                showOneSignalIntegrationAlert = false
             }
         } message: {
-            Text("The OneSignal SDK is installed and connected. Enable notifications to finish push setup.")
+            Text("Precisamos de sua permissão para enviar notificações.")
         }
         .alert("Error", isPresented: Binding(
             get: { model.errorMessage != nil },
@@ -60,13 +70,27 @@ struct ContentView: View {
         guard pushSubscriptionObserver == nil else { return }
 
         let observer = OneSignalService.shared.makePushSubscriptionObserver {
-            showOneSignalIntegrationAlert = true
+            showOneSignalIntegrationAlert = false
             model.handleServerSubscriptionAvailable()
         }
 
         pushSubscriptionObserver = observer
         OneSignalService.shared.addPushSubscriptionObserver(observer)
         observer.evaluate(subscriptionId: OneSignalService.shared.currentPushSubscriptionId)
+    }
+
+    private func refreshOneSignalIntegrationAlert() {
+        Task { @MainActor in
+            showOneSignalIntegrationAlert = await shouldShowOneSignalIntegrationAlert()
+        }
+    }
+
+    @MainActor
+    private func shouldShowOneSignalIntegrationAlert() async -> Bool {
+        guard model.iosNotificationsEnabled else { return false }
+        guard !OneSignalService.shared.hasUsablePushSubscription else { return false }
+        let isAuthorized = await OneSignalService.shared.hasNotificationAuthorization()
+        return !isAuthorized
     }
 }
 
