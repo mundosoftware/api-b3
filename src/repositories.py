@@ -114,21 +114,52 @@ class Repository:
         name: str | None = None,
         logo: str | None = None,
     ) -> dict[str, Any]:
+        return self.upsert_company(
+            ticker=ticker,
+            name=name,
+            logo=logo,
+            last_price=last_price,
+            daily_change_percent=daily_change_percent,
+        )
+
+    def upsert_company(
+        self,
+        ticker: str,
+        name: str | None = None,
+        asset_type: str | None = None,
+        logo: str | None = None,
+        last_price: float | None = None,
+        daily_change_percent: float | None = None,
+    ) -> dict[str, Any]:
         normalized = normalize_ticker(ticker)
-        now = utc_now_iso()
+        existing = self.get_company(normalized)
+        resolved_asset_type = asset_type or (existing["asset_type"] if existing else "stock")
+        updated_at = utc_now_iso() if last_price is not None or daily_change_percent is not None else None
         with self.database.connect() as db:
             db.execute(
                 """
                 INSERT INTO companies(ticker, name, asset_type, logo, last_price, daily_change_percent, updated_at)
-                VALUES (?, ?, 'stock', ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(ticker) DO UPDATE SET
                     name = COALESCE(excluded.name, companies.name),
+                    asset_type = COALESCE(excluded.asset_type, companies.asset_type),
                     logo = COALESCE(excluded.logo, companies.logo),
-                    last_price = excluded.last_price,
-                    daily_change_percent = excluded.daily_change_percent,
-                    updated_at = excluded.updated_at
+                    last_price = COALESCE(excluded.last_price, companies.last_price),
+                    daily_change_percent = COALESCE(
+                        excluded.daily_change_percent,
+                        companies.daily_change_percent
+                    ),
+                    updated_at = COALESCE(excluded.updated_at, companies.updated_at)
                 """,
-                (normalized, name or normalized, logo, last_price, daily_change_percent, now),
+                (
+                    normalized,
+                    name or normalized,
+                    resolved_asset_type,
+                    logo,
+                    last_price,
+                    daily_change_percent,
+                    updated_at,
+                ),
             )
             row = db.execute("SELECT * FROM companies WHERE ticker = ?", (normalized,)).fetchone()
             return company_from_row(row)
