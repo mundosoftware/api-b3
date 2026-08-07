@@ -228,6 +228,10 @@ struct AlertRuleUpdateRequest: Encodable {
     }
 }
 
+struct AlertRuleEnabledUpdateRequest: Encodable {
+    let enabled: Bool
+}
+
 struct DeviceRegistrationResponse: Decodable {
     let userId: String
     let onesignalConfigured: Bool

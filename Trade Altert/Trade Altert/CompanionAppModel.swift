@@ -108,6 +108,17 @@ final class CompanionAppModel: ObservableObject {
         }
     }
 
+    func updateAlertEnabled(_ alert: AlertRule, enabled: Bool) async {
+        await run {
+            _ = try await self.api.updateAlertEnabled(
+                userId: self.userId,
+                alertId: alert.id,
+                enabled: enabled
+            )
+            self.alertsByTicker[alert.ticker] = try await self.api.alerts(userId: self.userId, ticker: alert.ticker)
+        }
+    }
+
     func deleteAlert(_ alert: AlertRule) async {
         await run {
             try await self.api.deleteAlert(userId: self.userId, alertId: alert.id)

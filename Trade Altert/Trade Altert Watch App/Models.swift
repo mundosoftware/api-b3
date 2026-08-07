@@ -201,3 +201,7 @@ struct AlertRuleUpdateRequest: Encodable {
         case cooldownMinutes = "cooldown_minutes"
     }
 }
+
+struct AlertRuleEnabledUpdateRequest: Encodable {
+    let enabled: Bool
+}

@@ -7,7 +7,7 @@ from unittest.mock import patch
 from src.alerts import AlertEngine
 from src.config import Settings
 from src.database import init_db
-from src.models import AlertRuleCreateRequest
+from src.models import AlertRuleCreateRequest, AlertRuleUpdateRequest
 from src.onesignal import OneSignalClient
 from src.repositories import Repository
 
@@ -153,6 +153,52 @@ class AlertEngineTest(unittest.TestCase):
 
             self.assertEqual(result.notifications_sent, 1)
             self.assertEqual(onesignal.messages[0][4], ["ios-subscription"])
+
+    def test_disabled_alerts_are_not_evaluated_or_notified(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            settings = Settings(
+                database_path=f"{tmpdir}/app.db",
+                check_loop_enabled=False,
+                onesignal_app_id="app-id",
+                onesignal_rest_api_key="api-key",
+            )
+            init_db(settings)
+            repository = Repository(settings)
+            alert = repository.create_alert(
+                "user-a",
+                AlertRuleCreateRequest(
+                    ticker="PETR4",
+                    metric="price",
+                    operator="gte",
+                    threshold=10.0,
+                    weekdays=[5],
+                    start_time="00:00",
+                    end_time="23:59",
+                    timezone="UTC",
+                    frequency_minutes=1,
+                    cooldown_minutes=0,
+                ),
+            )
+            repository.save_device(
+                user_id="user-a",
+                platform="ios",
+                device_token="ios-subscription",
+                environment="production",
+                onesignal_subscription_id="ios-subscription",
+            )
+            updated = repository.update_alert(
+                "user-a", alert.id, AlertRuleUpdateRequest(enabled=False)
+            )
+
+            onesignal = FakeOneSignal()
+            engine = AlertEngine(repository, FakeTickerService(), onesignal, settings)
+            result = engine.run_due_checks(datetime(2026, 7, 31, 14, 0, tzinfo=UTC))
+
+            self.assertIsNotNone(updated)
+            self.assertFalse(updated.enabled)
+            self.assertEqual(result.evaluated_rules, 0)
+            self.assertEqual(result.notifications_sent, 0)
+            self.assertEqual(onesignal.messages, [])
 
     def test_alert_notification_text_is_localized(self):
         with tempfile.TemporaryDirectory() as tmpdir:

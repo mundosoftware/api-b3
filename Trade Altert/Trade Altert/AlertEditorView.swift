@@ -42,7 +42,16 @@ struct AlertEditorView: View {
     var body: some View {
         Form {
             Section {
-                Toggle(language.text("label.enabled"), isOn: $enabled)
+                Toggle(language.text("label.enabled"), isOn: Binding(
+                    get: { enabled },
+                    set: { newValue in
+                        enabled = newValue
+                        guard let alert else { return }
+                        Task {
+                            await model.updateAlertEnabled(alert, enabled: newValue)
+                        }
+                    }
+                ))
 
                 Picker(language.text("label.metric"), selection: $metric) {
                     ForEach(AlertMetric.allCases) { metric in
