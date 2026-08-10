@@ -18,13 +18,8 @@ final class AppModel: ObservableObject {
     private let api = APIClient.shared
 
     private init() {
-        if let stored = UserDefaults.standard.string(forKey: "b3watch.userId") {
-            userId = stored
-        } else {
-            let generated = UUID().uuidString
-            UserDefaults.standard.set(generated, forKey: "b3watch.userId")
-            userId = generated
-        }
+        let identity = UserIdentityStore.loadOrCreate()
+        userId = identity.userId
     }
 
     func bootstrap() async {
@@ -40,6 +35,25 @@ final class AppModel: ObservableObject {
     func refreshFavorites() async {
         await run {
             self.favorites = try await self.api.favorites(userId: self.userId)
+        }
+    }
+
+    func refreshTrackedCompanies() async {
+        await run {
+            var refreshed = try await self.api.favorites(userId: self.userId)
+            for index in refreshed.indices {
+                do {
+                    let company = try await self.api.quote(ticker: refreshed[index].ticker)
+                    refreshed[index] = Favorite(
+                        ticker: refreshed[index].ticker,
+                        createdAt: refreshed[index].createdAt,
+                        company: company
+                    )
+                } catch {
+                    continue
+                }
+            }
+            self.favorites = refreshed
         }
     }
 
@@ -125,6 +139,17 @@ final class AppModel: ObservableObject {
 
     func resendUserIdToCompanion() {
         WatchCompanionSyncService.shared.sendUserId(userId)
+    }
+
+    func adoptUserIdFromCompanion(_ companionUserId: String) {
+        guard !companionUserId.isEmpty, companionUserId != userId else { return }
+
+        userId = companionUserId
+        UserIdentityStore.save(companionUserId)
+        WatchCompanionSyncService.shared.sendUserId(companionUserId)
+        Task {
+            await bootstrap()
+        }
     }
 
     private func requestNotificationPermissionIfNeeded() async {

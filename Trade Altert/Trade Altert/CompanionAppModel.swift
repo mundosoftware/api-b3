@@ -15,6 +15,7 @@ final class CompanionAppModel: ObservableObject {
     @Published private(set) var userId: String
 
     private let api = CompanionAPIClient.shared
+    private var userIdWasGenerated: Bool
 
     var iosNotificationsEnabled: Bool {
         preferences?.iosEnabled ?? true
@@ -37,13 +38,9 @@ final class CompanionAppModel: ObservableObject {
     }
 
     private init() {
-        if let stored = UserDefaults.standard.string(forKey: "b3watch.userId") {
-            userId = stored
-        } else {
-            let generated = UUID().uuidString
-            UserDefaults.standard.set(generated, forKey: "b3watch.userId")
-            userId = generated
-        }
+        let identity = UserIdentityStore.loadOrCreate()
+        userId = identity.userId
+        userIdWasGenerated = identity.isNew
     }
 
     func bootstrap() async {
@@ -148,9 +145,14 @@ final class CompanionAppModel: ObservableObject {
 
     func adoptUserIdFromWatch(_ watchUserId: String) {
         guard !watchUserId.isEmpty, watchUserId != userId else { return }
+        guard userIdWasGenerated else {
+            CompanionWatchSyncService.shared.sendUserId(userId)
+            return
+        }
 
         userId = watchUserId
-        UserDefaults.standard.set(watchUserId, forKey: "b3watch.userId")
+        userIdWasGenerated = false
+        UserIdentityStore.save(watchUserId)
         OneSignalService.shared.login(userId: watchUserId)
         Task {
             await bootstrap()

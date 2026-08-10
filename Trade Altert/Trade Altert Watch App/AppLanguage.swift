@@ -80,6 +80,7 @@ final class AppLanguage: ObservableObject {
         "label.percent": [.pt: "Percentual", .en: "Percent"],
         "action.ok": [.pt: "OK", .en: "OK"],
         "action.done": [.pt: "Concluído", .en: "Done"],
+        "action.refresh": [.pt: "Atualizar", .en: "Refresh"],
         "action.track": [.pt: "Acompanhar", .en: "Track"],
         "action.untrack": [.pt: "Remover", .en: "Untrack"],
         "action.delete": [.pt: "Excluir", .en: "Delete"],

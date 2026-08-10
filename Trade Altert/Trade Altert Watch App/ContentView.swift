@@ -44,10 +44,19 @@ struct ContentView: View {
             .toolbar {
                 if model.isLoading {
                     ProgressView()
+                } else {
+                    Button {
+                        Task {
+                            await model.refreshTrackedCompanies()
+                        }
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                    .accessibilityLabel(language.text("action.refresh"))
                 }
             }
             .refreshable {
-                await model.refreshFavorites()
+                await model.refreshTrackedCompanies()
             }
             .alert(language.text("title.error"), isPresented: Binding(
                 get: { model.errorMessage != nil },

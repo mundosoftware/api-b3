@@ -44,4 +44,11 @@ final class WatchCompanionSyncService: NSObject, WCSessionDelegate {
             }
         }
     }
+
+    func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {
+        guard let userId = applicationContext["user_id"] as? String else { return }
+        Task { @MainActor in
+            self.model?.adoptUserIdFromCompanion(userId)
+        }
+    }
 }
