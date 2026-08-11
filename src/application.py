@@ -70,6 +70,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return {
             "status": "ok",
             "onesignal_configured": onesignal.configured,
+            "onesignal_ios_configured": onesignal.ios_configured,
+            "onesignal_watchos_configured": onesignal.watchos_configured,
             "check_loop_enabled": settings.check_loop_enabled,
         }
 
@@ -127,7 +129,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
         return DeviceRegistrationOut(
             user_id=user_id,
-            onesignal_configured=onesignal.configured,
+            onesignal_configured=onesignal.watchos_configured,
             onesignal_subscription_id=registration.subscription_id,
         )
 
@@ -147,7 +149,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
         return DeviceRegistrationOut(
             user_id=user_id,
-            onesignal_configured=onesignal.configured,
+            onesignal_configured=onesignal.ios_configured,
             onesignal_subscription_id=request.onesignal_subscription_id,
         )
 
@@ -174,7 +176,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         onesignal_errors: list[str] = []
         for subscription_id in subscription_ids:
             try:
-                if onesignal.delete_subscription(subscription_id):
+                if onesignal.delete_subscription(subscription_id, platform=platform):
                     onesignal_deleted += 1
             except OneSignalError as exc:
                 onesignal_errors.append(str(exc))

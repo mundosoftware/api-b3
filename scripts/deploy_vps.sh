@@ -187,6 +187,8 @@ fi
 : "${APP_USER:?APP_USER is required}"
 : "${ONESIGNAL_APP_ID:?ONESIGNAL_APP_ID is required}"
 : "${ONESIGNAL_REST_API_KEY:?ONESIGNAL_REST_API_KEY is required}"
+: "${ONESIGNAL_WATCH_APP_ID:?ONESIGNAL_WATCH_APP_ID is required for standalone watchOS notifications}"
+: "${ONESIGNAL_WATCH_REST_API_KEY:?ONESIGNAL_WATCH_REST_API_KEY is required for standalone watchOS notifications}"
 : "${ADMIN_TOKEN:?ADMIN_TOKEN is required}"
 
 SERVICE_BIND_HOST="${SERVER_HOST}"
@@ -481,6 +483,8 @@ trap 'rm -f "${TMP_ENV}"' EXIT
   write_env_line "ONESIGNAL_ENABLED" "${ONESIGNAL_ENABLED}"
   write_env_line "ONESIGNAL_APP_ID" "${ONESIGNAL_APP_ID}"
   write_env_line "ONESIGNAL_REST_API_KEY" "${ONESIGNAL_REST_API_KEY}"
+  write_env_line "ONESIGNAL_WATCH_APP_ID" "${ONESIGNAL_WATCH_APP_ID}"
+  write_env_line "ONESIGNAL_WATCH_REST_API_KEY" "${ONESIGNAL_WATCH_REST_API_KEY}"
   write_env_line "ADMIN_TOKEN" "${ADMIN_TOKEN}"
 } > "${TMP_ENV}"
 rsync -az -e "${RSYNC_SSH}" "${TMP_ENV}" "${SSH_TARGET}:${APP_DIR}/local.env"

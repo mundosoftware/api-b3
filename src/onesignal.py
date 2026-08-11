@@ -25,6 +25,12 @@ class OneSignalNotification:
     all_targeted_subscriptions_invalid: bool = False
 
 
+@dataclass(frozen=True)
+class OneSignalAppConfig:
+    app_id: str
+    rest_api_key: str
+
+
 class OneSignalClient:
     def __init__(self, settings: Settings | None = None):
         self.settings = settings or get_settings()
@@ -32,6 +38,14 @@ class OneSignalClient:
     @property
     def configured(self) -> bool:
         return self.settings.onesignal_configured
+
+    @property
+    def ios_configured(self) -> bool:
+        return self.settings.onesignal_ios_configured
+
+    @property
+    def watchos_configured(self) -> bool:
+        return self.settings.onesignal_watch_configured
 
     def register_watch_device(
         self,
@@ -43,11 +57,12 @@ class OneSignalClient:
         device_os: str | None = None,
         app_version: str | None = None,
     ) -> OneSignalRegistration:
-        if not self.configured:
+        config = self._app_config("watchos")
+        if not config:
             return OneSignalRegistration(subscription_id=None, raw_response={"skipped": "not_configured"})
 
         body: dict[str, Any] = {
-            "app_id": self.settings.onesignal_app_id,
+            "app_id": config.app_id,
             "identifier": apns_token,
             "device_type": 0,
             "external_user_id": user_id,
@@ -67,7 +82,7 @@ class OneSignalClient:
             "https://onesignal.com/api/v1/players",
             json=body,
             headers={
-                "Authorization": f"Basic {self.settings.onesignal_rest_api_key}",
+                "Authorization": f"Basic {config.rest_api_key}",
                 "Content-Type": "application/json",
             },
             timeout=8,
@@ -84,12 +99,14 @@ class OneSignalClient:
         body: str | Mapping[str, str],
         data: dict[str, Any] | None = None,
         subscription_ids: Sequence[str] | None = None,
+        platform: str = "ios",
     ) -> OneSignalNotification:
-        if not self.configured:
+        config = self._app_config(platform)
+        if not config:
             return OneSignalNotification(notification_id=None, raw_response={"skipped": "not_configured"})
 
         payload = {
-            "app_id": self.settings.onesignal_app_id,
+            "app_id": config.app_id,
             "target_channel": "push",
             "headings": self._localized_text(title),
             "contents": self._localized_text(body),
@@ -103,7 +120,7 @@ class OneSignalClient:
             "https://api.onesignal.com/notifications?c=push",
             json=payload,
             headers={
-                "Authorization": f"Key {self.settings.onesignal_rest_api_key}",
+                "Authorization": f"Key {config.rest_api_key}",
                 "Content-Type": "application/json",
             },
             timeout=8,
@@ -121,14 +138,15 @@ class OneSignalClient:
             ),
         )
 
-    def delete_subscription(self, subscription_id: str) -> bool:
-        if not self.configured:
+    def delete_subscription(self, subscription_id: str, platform: str = "ios") -> bool:
+        config = self._app_config(platform)
+        if not config:
             return False
 
         response = requests.delete(
-            f"https://api.onesignal.com/apps/{self.settings.onesignal_app_id}/subscriptions/{subscription_id}",
+            f"https://api.onesignal.com/apps/{config.app_id}/subscriptions/{subscription_id}",
             headers={
-                "Authorization": f"Key {self.settings.onesignal_rest_api_key}",
+                "Authorization": f"Key {config.rest_api_key}",
                 "Content-Type": "application/json",
             },
             timeout=8,
@@ -140,6 +158,25 @@ class OneSignalClient:
                 f"OneSignal subscription delete failed: {response.status_code} {response.text}"
             )
         return True
+
+    def _app_config(self, platform: str) -> OneSignalAppConfig | None:
+        if platform == "ios":
+            if self.settings.onesignal_ios_configured:
+                return OneSignalAppConfig(
+                    app_id=self.settings.onesignal_app_id or "",
+                    rest_api_key=self.settings.onesignal_rest_api_key or "",
+                )
+            return None
+
+        if platform == "watchos":
+            if self.settings.onesignal_watch_configured:
+                return OneSignalAppConfig(
+                    app_id=self.settings.onesignal_watch_app_id or "",
+                    rest_api_key=self.settings.onesignal_watch_rest_api_key or "",
+                )
+            return None
+
+        raise ValueError(f"unsupported OneSignal platform: {platform}")
 
     def _localized_text(self, value: str | Mapping[str, str]) -> dict[str, str]:
         if isinstance(value, str):

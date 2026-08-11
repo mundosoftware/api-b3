@@ -143,10 +143,10 @@ class AlertEngine:
         log_title = title["pt"]
         log_body = body["pt"]
 
-        subscription_ids: list[str] | None = None
+        subscription_records: list[dict[str, str]] | None = None
         if self.onesignal.configured:
-            subscription_ids = self.repository.list_enabled_notification_subscription_ids(rule.user_id)
-            if not subscription_ids:
+            subscription_records = self.repository.list_enabled_notification_subscriptions(rule.user_id)
+            if not subscription_records:
                 self.repository.log_notification(
                     user_id=rule.user_id,
                     alert_rule_id=rule.id,
@@ -158,23 +158,50 @@ class AlertEngine:
                 return False
 
         try:
-            notification = self.onesignal.send_push_to_user(
-                user_id=rule.user_id,
-                title=title,
-                body=body,
-                subscription_ids=subscription_ids,
-                data={
-                    "ticker": rule.ticker,
-                    "alert_rule_id": rule.id,
-                    "metric": rule.metric,
-                    "price": evaluation.price,
-                    "percent_change": evaluation.percent_change,
-                },
-            )
-            removed_devices = self._cleanup_stale_subscriptions(
-                rule.user_id, notification, subscription_ids
-            )
-            sent = self.onesignal.configured and bool(notification.notification_id)
+            notifications: list[object] = []
+            removed_devices = 0
+            data = {
+                "ticker": rule.ticker,
+                "alert_rule_id": rule.id,
+                "metric": rule.metric,
+                "price": evaluation.price,
+                "percent_change": evaluation.percent_change,
+            }
+
+            if subscription_records is None:
+                notifications.append(
+                    self.onesignal.send_push_to_user(
+                        user_id=rule.user_id,
+                        title=title,
+                        body=body,
+                        data=data,
+                    )
+                )
+            else:
+                subscriptions_by_platform: dict[str, list[str]] = defaultdict(list)
+                for record in subscription_records:
+                    subscriptions_by_platform[record["platform"]].append(record["subscription_id"])
+
+                for platform, subscription_ids in subscriptions_by_platform.items():
+                    notification = self.onesignal.send_push_to_user(
+                        user_id=rule.user_id,
+                        title=title,
+                        body=body,
+                        subscription_ids=subscription_ids,
+                        platform=platform,
+                        data=data,
+                    )
+                    notifications.append(notification)
+                    removed_devices += self._cleanup_stale_subscriptions(
+                        rule.user_id, notification, subscription_ids, platform
+                    )
+
+            notification_ids = [
+                notification.notification_id
+                for notification in notifications
+                if getattr(notification, "notification_id", None)
+            ]
+            sent = self.onesignal.configured and bool(notification_ids)
             status = "sent" if sent else ("not_delivered" if self.onesignal.configured else "onesignal_disabled")
             if removed_devices:
                 status = f"{status}; removed_stale_devices={removed_devices}"
@@ -184,7 +211,7 @@ class AlertEngine:
                 ticker=rule.ticker,
                 title=log_title,
                 body=log_body,
-                onesignal_notification_id=notification.notification_id,
+                onesignal_notification_id=",".join(notification_ids) or None,
                 status=status,
             )
             return sent
@@ -204,6 +231,7 @@ class AlertEngine:
         user_id: str,
         notification: object,
         attempted_subscription_ids: list[str] | None,
+        platform: str,
     ) -> int:
         stale_ids = set(getattr(notification, "invalid_subscription_ids", ()) or ())
         if getattr(notification, "all_targeted_subscriptions_invalid", False):
@@ -213,10 +241,12 @@ class AlertEngine:
 
         for subscription_id in stale_ids:
             try:
-                self.onesignal.delete_subscription(subscription_id)
+                self.onesignal.delete_subscription(subscription_id, platform=platform)
             except OneSignalError:
                 pass
-        return self.repository.delete_devices_by_subscription_ids(user_id, sorted(stale_ids))
+        return self.repository.delete_devices_by_subscription_ids(
+            user_id, sorted(stale_ids), platform=platform
+        )
 
     def _notification_text(
         self, rule: AlertRuleOut, evaluation: Evaluation

@@ -17,3 +17,4 @@ The iOS companion target initializes the OneSignal iOS SDK in `OneSignalService`
 The app target has Push Notifications, remote-notification background mode, and the shared app group entitlement configured for OneSignal.
 The `OneSignalNotificationServiceExtension` target is embedded into the iOS app and uses `OneSignalExtension` to process rich notifications.
 The iOS companion app registers its OneSignal subscription with the server and exposes iPhone and Apple Watch notification toggles.
+Standalone watch notifications use the watch APNs token, whose topic is the watch app bundle ID `com.mundosoftware.tradealert.watchkitapp`. Configure a separate OneSignal app for that bundle and set `ONESIGNAL_WATCH_APP_ID` plus `ONESIGNAL_WATCH_REST_API_KEY` on the server. Reusing the iOS OneSignal app for the watch token causes APNs `DeviceTokenNotForTopic` failures.

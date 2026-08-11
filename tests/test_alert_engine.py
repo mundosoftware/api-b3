@@ -30,14 +30,28 @@ class FakeTickerService:
 
 class FakeOneSignal:
     configured = True
+    ios_configured = True
+    watchos_configured = True
 
     def __init__(self, next_response=None):
         self.messages = []
         self.deleted_subscriptions = []
-        self.next_response = next_response
+        self.platforms = []
+        self.deleted_platforms = []
+        if isinstance(next_response, list):
+            self.next_responses = next_response
+            self.next_response = None
+        else:
+            self.next_responses = None
+            self.next_response = next_response
 
-    def send_push_to_user(self, user_id, title, body, data=None, subscription_ids=None):
+    def send_push_to_user(
+        self, user_id, title, body, data=None, subscription_ids=None, platform="ios"
+    ):
         self.messages.append((user_id, title, body, data, subscription_ids))
+        self.platforms.append(platform)
+        if self.next_responses is not None and self.next_responses:
+            return self.next_responses.pop(0)
         if self.next_response is not None:
             return self.next_response
         return SimpleNamespace(
@@ -46,8 +60,9 @@ class FakeOneSignal:
             all_targeted_subscriptions_invalid=False,
         )
 
-    def delete_subscription(self, subscription_id):
+    def delete_subscription(self, subscription_id, platform="ios"):
         self.deleted_subscriptions.append(subscription_id)
+        self.deleted_platforms.append(platform)
         return True
 
 
@@ -153,6 +168,112 @@ class AlertEngineTest(unittest.TestCase):
 
             self.assertEqual(result.notifications_sent, 1)
             self.assertEqual(onesignal.messages[0][4], ["ios-subscription"])
+            self.assertEqual(onesignal.platforms, ["ios"])
+
+    def test_watch_only_delivery_uses_watchos_platform(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            settings = Settings(
+                database_path=f"{tmpdir}/app.db",
+                check_loop_enabled=False,
+                onesignal_app_id="ios-app-id",
+                onesignal_rest_api_key="ios-api-key",
+                onesignal_watch_app_id="watch-app-id",
+                onesignal_watch_rest_api_key="watch-api-key",
+            )
+            init_db(settings)
+            repository = Repository(settings)
+            repository.create_alert(
+                "user-a",
+                AlertRuleCreateRequest(
+                    ticker="PETR4",
+                    metric="price",
+                    operator="gte",
+                    threshold=10.0,
+                    weekdays=[5],
+                    start_time="00:00",
+                    end_time="23:59",
+                    timezone="UTC",
+                    frequency_minutes=1,
+                    cooldown_minutes=0,
+                ),
+            )
+            repository.save_device(
+                user_id="user-a",
+                platform="ios",
+                device_token="ios-subscription",
+                environment="production",
+                onesignal_subscription_id="ios-subscription",
+            )
+            repository.save_device(
+                user_id="user-a",
+                platform="watchos",
+                device_token="watch-apns-token",
+                environment="production",
+                onesignal_subscription_id="watch-subscription",
+            )
+            repository.update_notification_preferences(
+                "user-a",
+                SimpleNamespace(ios_enabled=False, watchos_enabled=True),
+            )
+
+            onesignal = FakeOneSignal()
+            engine = AlertEngine(repository, FakeTickerService(), onesignal, settings)
+            result = engine.run_due_checks(datetime(2026, 7, 31, 14, 0, tzinfo=UTC))
+
+            self.assertEqual(result.notifications_sent, 1)
+            self.assertEqual(onesignal.platforms, ["watchos"])
+            self.assertEqual(onesignal.messages[0][4], ["watch-subscription"])
+
+    def test_ios_and_watch_delivery_sends_once_per_platform(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            settings = Settings(
+                database_path=f"{tmpdir}/app.db",
+                check_loop_enabled=False,
+                onesignal_app_id="ios-app-id",
+                onesignal_rest_api_key="ios-api-key",
+                onesignal_watch_app_id="watch-app-id",
+                onesignal_watch_rest_api_key="watch-api-key",
+            )
+            init_db(settings)
+            repository = Repository(settings)
+            repository.create_alert(
+                "user-a",
+                AlertRuleCreateRequest(
+                    ticker="PETR4",
+                    metric="price",
+                    operator="gte",
+                    threshold=10.0,
+                    weekdays=[5],
+                    start_time="00:00",
+                    end_time="23:59",
+                    timezone="UTC",
+                    frequency_minutes=1,
+                    cooldown_minutes=0,
+                ),
+            )
+            repository.save_device(
+                user_id="user-a",
+                platform="ios",
+                device_token="ios-subscription",
+                environment="production",
+                onesignal_subscription_id="ios-subscription",
+            )
+            repository.save_device(
+                user_id="user-a",
+                platform="watchos",
+                device_token="watch-apns-token",
+                environment="production",
+                onesignal_subscription_id="watch-subscription",
+            )
+
+            onesignal = FakeOneSignal()
+            engine = AlertEngine(repository, FakeTickerService(), onesignal, settings)
+            result = engine.run_due_checks(datetime(2026, 7, 31, 14, 0, tzinfo=UTC))
+
+            self.assertEqual(result.notifications_sent, 1)
+            self.assertEqual(onesignal.platforms, ["ios", "watchos"])
+            self.assertEqual(onesignal.messages[0][4], ["ios-subscription"])
+            self.assertEqual(onesignal.messages[1][4], ["watch-subscription"])
 
     def test_disabled_alerts_are_not_evaluated_or_notified(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -246,8 +367,10 @@ class AlertEngineTest(unittest.TestCase):
     def test_onesignal_payload_preserves_localized_text_and_language(self):
         settings = Settings(
             check_loop_enabled=False,
-            onesignal_app_id="app-id",
-            onesignal_rest_api_key="api-key",
+            onesignal_app_id="ios-app-id",
+            onesignal_rest_api_key="ios-api-key",
+            onesignal_watch_app_id="watch-app-id",
+            onesignal_watch_rest_api_key="watch-api-key",
         )
         client = OneSignalClient(settings)
 
@@ -271,11 +394,23 @@ class AlertEngineTest(unittest.TestCase):
             )
             registration_payload = post.call_args.kwargs["json"]
 
+            client.send_push_to_user(
+                user_id="user-a",
+                title="Watch",
+                body="Watch",
+                subscription_ids=["watch-subscription"],
+                platform="watchos",
+            )
+            watch_notification_payload = post.call_args.kwargs["json"]
+
         self.assertEqual(notification_payload["headings"]["pt"], "Alerta PETR4")
         self.assertEqual(notification_payload["headings"]["en"], "PETR4 alert")
         self.assertEqual(notification_payload["contents"]["pt"], "Corpo")
         self.assertEqual(notification_payload["contents"]["en"], "Body")
+        self.assertEqual(notification_payload["app_id"], "ios-app-id")
+        self.assertEqual(registration_payload["app_id"], "watch-app-id")
         self.assertEqual(registration_payload["language"], "en")
+        self.assertEqual(watch_notification_payload["app_id"], "watch-app-id")
 
     def test_invalid_subscription_is_removed_after_notification_send(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -318,17 +453,25 @@ class AlertEngineTest(unittest.TestCase):
             )
 
             onesignal = FakeOneSignal(
-                SimpleNamespace(
-                    notification_id="notification-1",
-                    invalid_subscription_ids=("stale-subscription",),
-                    all_targeted_subscriptions_invalid=False,
-                )
+                [
+                    SimpleNamespace(
+                        notification_id="notification-1",
+                        invalid_subscription_ids=("stale-subscription",),
+                        all_targeted_subscriptions_invalid=False,
+                    ),
+                    SimpleNamespace(
+                        notification_id="notification-2",
+                        invalid_subscription_ids=(),
+                        all_targeted_subscriptions_invalid=False,
+                    ),
+                ]
             )
             engine = AlertEngine(repository, FakeTickerService(), onesignal, settings)
             result = engine.run_due_checks(datetime(2026, 7, 31, 14, 0, tzinfo=UTC))
 
             self.assertEqual(result.notifications_sent, 1)
             self.assertEqual(onesignal.deleted_subscriptions, ["stale-subscription"])
+            self.assertEqual(onesignal.deleted_platforms, ["ios"])
             self.assertEqual(
                 repository.list_enabled_notification_subscription_ids("user-a"),
                 ["watch-subscription"],

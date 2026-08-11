@@ -19,6 +19,8 @@ class Settings(BaseModel):
     default_timezone: str = "America/Sao_Paulo"
     onesignal_app_id: str | None = None
     onesignal_rest_api_key: str | None = None
+    onesignal_watch_app_id: str | None = None
+    onesignal_watch_rest_api_key: str | None = None
     onesignal_enabled: bool = True
     admin_token: str | None = None
 
@@ -50,6 +52,8 @@ class Settings(BaseModel):
             default_timezone=os.getenv("DEFAULT_TIMEZONE", cls.model_fields["default_timezone"].default),
             onesignal_app_id=os.getenv("ONESIGNAL_APP_ID") or None,
             onesignal_rest_api_key=os.getenv("ONESIGNAL_REST_API_KEY") or None,
+            onesignal_watch_app_id=os.getenv("ONESIGNAL_WATCH_APP_ID") or None,
+            onesignal_watch_rest_api_key=os.getenv("ONESIGNAL_WATCH_REST_API_KEY") or None,
             onesignal_enabled=env_bool("ONESIGNAL_ENABLED", cls.model_fields["onesignal_enabled"].default),
             admin_token=os.getenv("ADMIN_TOKEN") or None,
         )
@@ -60,7 +64,19 @@ class Settings(BaseModel):
 
     @property
     def onesignal_configured(self) -> bool:
+        return self.onesignal_ios_configured or self.onesignal_watch_configured
+
+    @property
+    def onesignal_ios_configured(self) -> bool:
         return bool(self.onesignal_app_id and self.onesignal_rest_api_key and self.onesignal_enabled)
+
+    @property
+    def onesignal_watch_configured(self) -> bool:
+        return bool(
+            self.onesignal_watch_app_id
+            and self.onesignal_watch_rest_api_key
+            and self.onesignal_enabled
+        )
 
 
 @lru_cache

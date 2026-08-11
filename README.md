@@ -31,8 +31,10 @@ Local mode creates `venv`, installs dependencies, initializes SQLite at `LOCAL_D
 Important env vars:
 
 - `DATABASE_PATH`: SQLite file path, default `database/app.db`.
-- `ONESIGNAL_APP_ID`: OneSignal app id.
-- `ONESIGNAL_REST_API_KEY`: OneSignal REST API key.
+- `ONESIGNAL_APP_ID`: OneSignal app id for the iOS companion app, configured with APNs Bundle ID `com.mundosoftware.tradealert`.
+- `ONESIGNAL_REST_API_KEY`: OneSignal REST API key for the iOS companion app.
+- `ONESIGNAL_WATCH_APP_ID`: separate OneSignal app id for standalone watchOS, configured with APNs Bundle ID `com.mundosoftware.tradealert.watchkitapp`.
+- `ONESIGNAL_WATCH_REST_API_KEY`: OneSignal REST API key for the standalone watchOS app.
 - `ADMIN_TOKEN`: required header value for `POST /admin/run-checks` when set.
 - `CHECK_LOOP_SECONDS`: background scheduler interval.
 - `QUOTE_CACHE_TTL_SECONDS`: quote cache age before a live refresh.
@@ -77,6 +79,7 @@ The watch app source is under `watchos/B3TickerWatch`.
 5. Use `development` for debug/ad-hoc builds and `production` for TestFlight/App Store in `AppConfig.deviceEnvironment`.
 
 Standalone watchOS uses APNs directly on the watch. The watch sends its APNs token to this API, and the server registers that token with OneSignal so the REST API key never ships in the watch app.
+The watch APNs token belongs to the watch app bundle, so it must be registered in a separate OneSignal app whose Apple APNs settings use `com.mundosoftware.tradealert.watchkitapp`. Do not reuse the iOS OneSignal app configured for `com.mundosoftware.tradealert`; APNs will reject watch-only sends with `DeviceTokenNotForTopic`.
 
 ## VPS Deploy
 

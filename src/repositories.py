@@ -499,6 +499,12 @@ class Repository:
             return self._preference_dict(row)
 
     def list_enabled_notification_subscription_ids(self, user_id: str) -> list[str]:
+        return [
+            subscription["subscription_id"]
+            for subscription in self.list_enabled_notification_subscriptions(user_id)
+        ]
+
+    def list_enabled_notification_subscriptions(self, user_id: str) -> list[dict[str, str]]:
         preferences = self.get_notification_preferences(user_id)
         platforms: list[str] = []
         if preferences["ios_enabled"]:
@@ -512,17 +518,24 @@ class Repository:
         with self.database.connect() as db:
             rows = db.execute(
                 f"""
-                SELECT DISTINCT onesignal_subscription_id
+                SELECT platform, onesignal_subscription_id
                 FROM user_devices
                 WHERE user_id = ?
                     AND platform IN ({placeholders})
                     AND onesignal_subscription_id IS NOT NULL
                     AND onesignal_subscription_id != ''
-                ORDER BY platform, last_seen_at DESC
+                GROUP BY platform, onesignal_subscription_id
+                ORDER BY platform, MAX(last_seen_at) DESC
                 """,
                 (user_id, *platforms),
             ).fetchall()
-            return [row["onesignal_subscription_id"] for row in rows]
+            return [
+                {
+                    "platform": row["platform"],
+                    "subscription_id": row["onesignal_subscription_id"],
+                }
+                for row in rows
+            ]
 
     def list_device_subscription_ids(
         self,
@@ -594,7 +607,7 @@ class Repository:
             return cursor.rowcount
 
     def delete_devices_by_subscription_ids(
-        self, user_id: str, subscription_ids: Sequence[str]
+        self, user_id: str, subscription_ids: Sequence[str], platform: str | None = None
     ) -> int:
         unique_ids = list(
             dict.fromkeys(subscription_id for subscription_id in subscription_ids if subscription_id)
@@ -603,14 +616,19 @@ class Repository:
             return 0
 
         placeholders = ",".join("?" for _ in unique_ids)
+        conditions = ["user_id = ?", f"onesignal_subscription_id IN ({placeholders})"]
+        params: list[Any] = [user_id, *unique_ids]
+        if platform is not None:
+            conditions.append("platform = ?")
+            params.append(platform)
+
         with self.database.connect() as db:
             cursor = db.execute(
                 f"""
                 DELETE FROM user_devices
-                WHERE user_id = ?
-                    AND onesignal_subscription_id IN ({placeholders})
+                WHERE {" AND ".join(conditions)}
                 """,
-                (user_id, *unique_ids),
+                params,
             )
             return cursor.rowcount
 
