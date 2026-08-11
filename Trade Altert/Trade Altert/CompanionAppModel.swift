@@ -131,7 +131,13 @@ final class CompanionAppModel: ObservableObject {
 
     func setWatchNotificationsEnabled(_ enabled: Bool) {
         Task {
+            if enabled {
+                CompanionWatchSyncService.shared.sendUserId(userId)
+            }
             await updateNotificationPreferences(iosEnabled: nil, watchosEnabled: enabled)
+            if enabled {
+                CompanionWatchSyncService.shared.sendUserId(userId)
+            }
         }
     }
 

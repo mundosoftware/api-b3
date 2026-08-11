@@ -28,6 +28,11 @@ final class AppModel: ObservableObject {
         await run {
             try await self.api.upsertUser(userId: self.userId, timezone: TimeZone.current.identifier)
             await self.requestNotificationPermissionIfNeeded()
+            do {
+                try await self.registerStoredDeviceIfAvailable()
+            } catch {
+                self.errorMessage = error.localizedDescription
+            }
             self.favorites = try await self.api.favorites(userId: self.userId)
         }
     }
@@ -122,11 +127,15 @@ final class AppModel: ObservableObject {
     func registerDevice(apnsToken: String) async {
         UserDefaults.standard.set(apnsToken, forKey: Self.apnsTokenStorageKey)
         await run {
-            try await self.api.registerDevice(userId: self.userId, token: apnsToken)
+            try await self.registerDeviceToken(apnsToken)
         }
     }
 
     func refreshDeviceRegistrationForLanguageChange() async {
+        await refreshStoredDeviceRegistration()
+    }
+
+    func refreshStoredDeviceRegistration() async {
         guard
             let token = UserDefaults.standard.string(forKey: Self.apnsTokenStorageKey),
             !token.isEmpty
@@ -134,7 +143,9 @@ final class AppModel: ObservableObject {
             return
         }
 
-        await registerDevice(apnsToken: token)
+        await run {
+            try await self.registerDeviceToken(token)
+        }
     }
 
     func resendUserIdToCompanion() {
@@ -170,6 +181,21 @@ final class AppModel: ObservableObject {
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    private func registerStoredDeviceIfAvailable() async throws {
+        guard
+            let token = UserDefaults.standard.string(forKey: Self.apnsTokenStorageKey),
+            !token.isEmpty
+        else {
+            return
+        }
+
+        try await registerDeviceToken(token)
+    }
+
+    private func registerDeviceToken(_ token: String) async throws {
+        try await api.registerDevice(userId: userId, token: token)
     }
 
     private func notificationAuthorizationStatus() async -> UNAuthorizationStatus {
