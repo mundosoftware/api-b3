@@ -1,6 +1,7 @@
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import UTC, datetime, time, timedelta
+from uuid import uuid4
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from src.config import Settings, get_settings
@@ -19,6 +20,17 @@ class Evaluation:
     baseline_price: float | None
 
 
+@dataclass
+class DueStatus:
+    due: bool
+    reason: str
+    message: str
+    timezone: str
+    timezone_fallback: bool
+    server_time: datetime
+    local_time: datetime
+
+
 class AlertEngine:
     def __init__(
         self,
@@ -33,64 +45,186 @@ class AlertEngine:
         self.onesignal = onesignal or OneSignalClient(self.settings)
 
     def run_due_checks(self, now: datetime | None = None) -> RunChecksOut:
-        now = now or datetime.now(UTC)
-        due_rules = [rule for rule in self.repository.list_enabled_alerts() if self.is_due(rule, now)]
-        rules_by_ticker: dict[str, list[AlertRuleOut]] = defaultdict(list)
-        for rule in due_rules:
-            rules_by_ticker[rule.ticker].append(rule)
-
+        now = self._server_time(now or datetime.now(UTC))
+        run_id = uuid4().hex
         checked_tickers = 0
         evaluated_rules = 0
         triggered_rules = 0
         notifications_sent = 0
 
-        for ticker, rules in rules_by_ticker.items():
-            try:
-                quote = self.ticker_service.quote(ticker, force_refresh=True)
-            except QuoteLookupError:
-                continue
+        self.repository.log_alert_run_started(run_id, self._iso(now))
+        try:
+            due_rules = [
+                rule for rule in self.repository.list_enabled_alerts() if self.is_due(rule, now)
+            ]
+            rules_by_ticker: dict[str, list[AlertRuleOut]] = defaultdict(list)
+            for rule in due_rules:
+                rules_by_ticker[rule.ticker].append(rule)
 
-            checked_tickers += 1
-            price = float(quote["last_price"])
-            daily_change_percent = quote.get("daily_change_percent")
-            for rule in rules:
-                evaluated_rules += 1
-                evaluation = self.evaluate(rule, price, daily_change_percent, now)
-                should_notify = evaluation.triggered and not self.in_cooldown(rule, now)
-                notification_sent = False
-                if should_notify:
-                    triggered_rules += 1
-                    notification_sent = self.notify(rule, evaluation)
-                    if notification_sent:
-                        notifications_sent += 1
-                self.repository.mark_alert_checked(
-                    alert_id=rule.id,
-                    price=evaluation.price,
-                    percent_change=evaluation.percent_change,
-                    baseline_price=evaluation.baseline_price,
-                    triggered=notification_sent,
-                )
+            for ticker, rules in rules_by_ticker.items():
+                try:
+                    quote = self.ticker_service.quote(ticker, force_refresh=True)
+                except QuoteLookupError as exc:
+                    for rule in rules:
+                        self._log_rule_event(
+                            run_id=run_id,
+                            rule=rule,
+                            now=now,
+                            event_type="failure",
+                            reason="quote_lookup_failed",
+                            message=str(exc),
+                        )
+                    continue
 
-        return RunChecksOut(
-            checked_tickers=checked_tickers,
-            evaluated_rules=evaluated_rules,
-            triggered_rules=triggered_rules,
-            notifications_sent=notifications_sent,
-        )
+                checked_tickers += 1
+                price = float(quote["last_price"])
+                daily_change_percent = quote.get("daily_change_percent")
+                for rule in rules:
+                    evaluated_rules += 1
+                    evaluation = self.evaluate(rule, price, daily_change_percent, now)
+                    blocked_by_cooldown = evaluation.triggered and self.in_cooldown(rule, now)
+                    should_notify = evaluation.triggered and not blocked_by_cooldown
+                    notification_sent = False
+                    if blocked_by_cooldown:
+                        self._log_rule_event(
+                            run_id=run_id,
+                            rule=rule,
+                            now=now,
+                            event_type="suppressed",
+                            reason="cooldown",
+                            message="alert condition matched but cooldown is still active",
+                            price=evaluation.price,
+                            percent_change=evaluation.percent_change,
+                        )
+                    if should_notify:
+                        triggered_rules += 1
+                        notification_sent = self.notify(rule, evaluation)
+                        if notification_sent:
+                            notifications_sent += 1
+                        else:
+                            self._log_rule_event(
+                                run_id=run_id,
+                                rule=rule,
+                                now=now,
+                                event_type="failure",
+                                reason="notification_not_delivered",
+                                message="alert condition matched but no push notification was delivered",
+                                price=evaluation.price,
+                                percent_change=evaluation.percent_change,
+                            )
+                    self.repository.mark_alert_checked(
+                        alert_id=rule.id,
+                        price=evaluation.price,
+                        percent_change=evaluation.percent_change,
+                        baseline_price=evaluation.baseline_price,
+                        triggered=notification_sent,
+                        checked_at=self._iso(now),
+                    )
+
+            result = RunChecksOut(
+                checked_tickers=checked_tickers,
+                evaluated_rules=evaluated_rules,
+                triggered_rules=triggered_rules,
+                notifications_sent=notifications_sent,
+            )
+            self.repository.finish_alert_run(
+                run_id=run_id,
+                finished_at=self._iso(datetime.now(UTC)),
+                status="success",
+                checked_tickers=checked_tickers,
+                evaluated_rules=evaluated_rules,
+                triggered_rules=triggered_rules,
+                notifications_sent=notifications_sent,
+            )
+            return result
+        except Exception as exc:
+            self.repository.finish_alert_run(
+                run_id=run_id,
+                finished_at=self._iso(datetime.now(UTC)),
+                status="error",
+                checked_tickers=checked_tickers,
+                evaluated_rules=evaluated_rules,
+                triggered_rules=triggered_rules,
+                notifications_sent=notifications_sent,
+                failure_reason=str(exc),
+            )
+            raise
 
     def is_due(self, rule: AlertRuleOut, now: datetime) -> bool:
-        local_now = self._local_time(now, rule.timezone)
+        return self.due_status(rule, now).due
+
+    def due_status(self, rule: AlertRuleOut, now: datetime | None = None) -> DueStatus:
+        server_now = self._server_time(now or datetime.now(UTC))
+        local_now, resolved_timezone, timezone_fallback = self._local_time(server_now, rule.timezone)
+        if not rule.enabled:
+            return DueStatus(
+                due=False,
+                reason="disabled",
+                message="alert is disabled",
+                timezone=resolved_timezone,
+                timezone_fallback=timezone_fallback,
+                server_time=server_now,
+                local_time=local_now,
+            )
         if local_now.isoweekday() not in rule.weekdays:
-            return False
+            return DueStatus(
+                due=False,
+                reason="outside_weekday",
+                message=f"local weekday {local_now.isoweekday()} is not enabled",
+                timezone=resolved_timezone,
+                timezone_fallback=timezone_fallback,
+                server_time=server_now,
+                local_time=local_now,
+            )
         if not self._inside_time_window(local_now.time(), rule.start_time, rule.end_time):
-            return False
+            return DueStatus(
+                due=False,
+                reason="outside_window",
+                message=(
+                    f"local time {local_now.strftime('%H:%M')} is outside "
+                    f"{rule.start_time}-{rule.end_time}"
+                ),
+                timezone=resolved_timezone,
+                timezone_fallback=timezone_fallback,
+                server_time=server_now,
+                local_time=local_now,
+            )
 
         last_checked = parse_iso(rule.last_checked_at)
         if not last_checked:
-            return True
+            return DueStatus(
+                due=True,
+                reason="due",
+                message="alert has never been checked",
+                timezone=resolved_timezone,
+                timezone_fallback=timezone_fallback,
+                server_time=server_now,
+                local_time=local_now,
+            )
         if last_checked.tzinfo is None:
             last_checked = last_checked.replace(tzinfo=UTC)
-        return now - last_checked >= timedelta(minutes=rule.frequency_minutes)
+        elapsed = server_now - last_checked
+        required = timedelta(minutes=rule.frequency_minutes)
+        if elapsed < required:
+            remaining = required - elapsed
+            return DueStatus(
+                due=False,
+                reason="frequency_wait",
+                message=f"next check is due in {int(remaining.total_seconds())} seconds",
+                timezone=resolved_timezone,
+                timezone_fallback=timezone_fallback,
+                server_time=server_now,
+                local_time=local_now,
+            )
+        return DueStatus(
+            due=True,
+            reason="due",
+            message="alert is inside window and frequency interval elapsed",
+            timezone=resolved_timezone,
+            timezone_fallback=timezone_fallback,
+            server_time=server_now,
+            local_time=local_now,
+        )
 
     def evaluate(
         self,
@@ -302,11 +436,47 @@ class AlertEngine:
             return formatted.replace(".", ",")
         return formatted
 
-    def _local_time(self, now: datetime, timezone: str) -> datetime:
+    def _server_time(self, now: datetime) -> datetime:
+        if now.tzinfo is None:
+            return now.replace(tzinfo=UTC)
+        return now.astimezone(UTC)
+
+    def _iso(self, value: datetime) -> str:
+        return value.replace(microsecond=0).isoformat()
+
+    def _local_time(self, now: datetime, timezone: str) -> tuple[datetime, str, bool]:
         try:
-            return now.astimezone(ZoneInfo(timezone))
+            return now.astimezone(ZoneInfo(timezone)), timezone, False
         except ZoneInfoNotFoundError:
-            return now.astimezone(ZoneInfo(self.settings.default_timezone))
+            fallback = self.settings.default_timezone
+            return now.astimezone(ZoneInfo(fallback)), fallback, True
+
+    def _log_rule_event(
+        self,
+        run_id: str,
+        rule: AlertRuleOut,
+        now: datetime,
+        event_type: str,
+        reason: str,
+        message: str,
+        price: float | None = None,
+        percent_change: float | None = None,
+    ) -> None:
+        status = self.due_status(rule, now)
+        self.repository.log_alert_event(
+            run_id=run_id,
+            user_id=rule.user_id,
+            alert_rule_id=rule.id,
+            ticker=rule.ticker,
+            event_type=event_type,
+            reason=reason,
+            message=message,
+            rule_timezone=status.timezone,
+            server_time=self._iso(status.server_time),
+            local_time=self._iso(status.local_time),
+            price=price,
+            percent_change=percent_change,
+        )
 
     def _inside_time_window(self, current: time, start: str, end: str) -> bool:
         start_time = self._parse_hhmm(start)

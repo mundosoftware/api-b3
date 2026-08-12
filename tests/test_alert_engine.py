@@ -10,6 +10,8 @@ from src.database import init_db
 from src.models import AlertRuleCreateRequest, AlertRuleUpdateRequest
 from src.onesignal import OneSignalClient
 from src.repositories import Repository
+from src.telemetry import TelemetryService
+from src.tickers import QuoteLookupError
 
 
 class FakeTickerService:
@@ -26,6 +28,11 @@ class FakeTickerService:
             "daily_change_percent": 1.5,
             "updated_at": "2026-07-31T14:00:00+00:00",
         }
+
+
+class FailingTickerService:
+    def quote(self, ticker: str, force_refresh: bool = False):
+        raise QuoteLookupError("network down")
 
 
 class FakeOneSignal:
@@ -67,6 +74,137 @@ class FakeOneSignal:
 
 
 class AlertEngineTest(unittest.TestCase):
+    def test_time_window_uses_rule_timezone(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            settings = Settings(database_path=f"{tmpdir}/app.db", check_loop_enabled=False)
+            init_db(settings)
+            repository = Repository(settings)
+            alert = repository.create_alert(
+                "user-a",
+                AlertRuleCreateRequest(
+                    ticker="PETR4",
+                    metric="price",
+                    operator="gte",
+                    threshold=10.0,
+                    weekdays=[3],
+                    start_time="10:00",
+                    end_time="18:00",
+                    timezone="America/Sao_Paulo",
+                    frequency_minutes=1,
+                    cooldown_minutes=0,
+                ),
+            )
+            engine = AlertEngine(repository, FakeTickerService(), FakeOneSignal(), settings)
+
+            before_open = engine.due_status(alert, datetime(2026, 8, 12, 12, 59, tzinfo=UTC))
+            at_open = engine.due_status(alert, datetime(2026, 8, 12, 13, 0, tzinfo=UTC))
+            after_close = engine.due_status(alert, datetime(2026, 8, 12, 21, 1, tzinfo=UTC))
+
+            self.assertFalse(before_open.due)
+            self.assertEqual(before_open.reason, "outside_window")
+            self.assertEqual(before_open.local_time.strftime("%H:%M"), "09:59")
+            self.assertTrue(at_open.due)
+            self.assertEqual(at_open.local_time.strftime("%H:%M"), "10:00")
+            self.assertFalse(after_close.due)
+            self.assertEqual(after_close.reason, "outside_window")
+            self.assertEqual(after_close.local_time.strftime("%H:%M"), "18:01")
+
+    def test_create_alert_without_timezone_uses_saved_user_timezone(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            settings = Settings(
+                database_path=f"{tmpdir}/app.db",
+                check_loop_enabled=False,
+                default_timezone="UTC",
+            )
+            init_db(settings)
+            repository = Repository(settings)
+            repository.upsert_user("user-a", timezone="America/New_York")
+
+            alert = repository.create_alert(
+                "user-a",
+                AlertRuleCreateRequest(
+                    ticker="PETR4",
+                    metric="price",
+                    operator="gte",
+                    threshold=10.0,
+                    weekdays=[1, 2, 3, 4, 5],
+                    start_time="10:00",
+                    end_time="18:00",
+                    frequency_minutes=1,
+                    cooldown_minutes=0,
+                ),
+            )
+
+            self.assertEqual(alert.timezone, "America/New_York")
+
+    def test_telemetry_status_lists_due_reason_and_local_time(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            settings = Settings(database_path=f"{tmpdir}/app.db", check_loop_enabled=False)
+            init_db(settings)
+            repository = Repository(settings)
+            repository.create_alert(
+                "user-a",
+                AlertRuleCreateRequest(
+                    ticker="PETR4",
+                    metric="price",
+                    operator="gte",
+                    threshold=10.0,
+                    weekdays=[3],
+                    start_time="10:00",
+                    end_time="18:00",
+                    timezone="America/Sao_Paulo",
+                    frequency_minutes=1,
+                    cooldown_minutes=0,
+                ),
+            )
+            engine = AlertEngine(repository, FakeTickerService(), FakeOneSignal(), settings)
+            telemetry = TelemetryService(repository, engine)
+
+            result = telemetry.alert_statuses(
+                user_id="user-a",
+                ticker="PETR4",
+                now="2026-08-12T12:59:00Z",
+            )
+
+            self.assertEqual(len(result), 1)
+            self.assertFalse(result[0].due)
+            self.assertEqual(result[0].reason, "outside_window")
+            self.assertIn("09:59", result[0].local_time)
+
+    def test_quote_lookup_failures_are_logged_for_telemetry(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            settings = Settings(database_path=f"{tmpdir}/app.db", check_loop_enabled=False)
+            init_db(settings)
+            repository = Repository(settings)
+            repository.create_alert(
+                "user-a",
+                AlertRuleCreateRequest(
+                    ticker="PETR4",
+                    metric="price",
+                    operator="gte",
+                    threshold=10.0,
+                    weekdays=[3],
+                    start_time="10:00",
+                    end_time="18:00",
+                    timezone="America/Sao_Paulo",
+                    frequency_minutes=1,
+                    cooldown_minutes=0,
+                ),
+            )
+            engine = AlertEngine(repository, FailingTickerService(), FakeOneSignal(), settings)
+
+            result = engine.run_due_checks(datetime(2026, 8, 12, 13, 0, tzinfo=UTC))
+            events = repository.list_alert_event_logs(event_type="failure", reason="quote_lookup_failed")
+            failures = repository.list_failure_telemetry()
+            runs = repository.list_alert_run_logs()
+
+            self.assertEqual(result.checked_tickers, 0)
+            self.assertEqual(len(events), 1)
+            self.assertEqual(events[0]["message"], "network down")
+            self.assertEqual(events[0]["local_time"], "2026-08-12T10:00:00-03:00")
+            self.assertEqual(failures[0]["reason"], "quote_lookup_failed")
+            self.assertEqual(runs[0]["status"], "success")
+
     def test_shared_ticker_lookup_for_multiple_users(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             settings = Settings(

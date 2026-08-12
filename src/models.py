@@ -191,3 +191,116 @@ class RunChecksOut(BaseModel):
     evaluated_rules: int
     triggered_rules: int
     notifications_sent: int
+
+
+class AlertTelemetryStatusOut(BaseModel):
+    id: int
+    user_id: str
+    ticker: str
+    enabled: bool
+    due: bool
+    reason: str
+    message: str
+    timezone: str
+    timezone_fallback: bool
+    server_time: str
+    local_time: str
+    start_time: str
+    end_time: str
+    weekdays: list[int]
+    frequency_minutes: int
+    cooldown_minutes: int
+    last_checked_at: str | None = None
+    last_triggered_at: str | None = None
+
+
+class AlertTelemetryStatusListOut(BaseModel):
+    result: list[AlertTelemetryStatusOut]
+
+
+class AlertRunLogOut(BaseModel):
+    id: int
+    run_id: str
+    started_at: str
+    finished_at: str | None = None
+    status: str
+    checked_tickers: int
+    evaluated_rules: int
+    triggered_rules: int
+    notifications_sent: int
+    failure_reason: str | None = None
+
+
+class AlertRunLogListOut(BaseModel):
+    result: list[AlertRunLogOut]
+
+
+class AlertEventLogOut(BaseModel):
+    id: int
+    run_id: str | None = None
+    user_id: str
+    alert_rule_id: int | None = None
+    ticker: str
+    event_type: str
+    reason: str
+    message: str
+    rule_timezone: str | None = None
+    server_time: str | None = None
+    local_time: str | None = None
+    price: float | None = None
+    percent_change: float | None = None
+    created_at: str
+
+
+class AlertEventLogListOut(BaseModel):
+    result: list[AlertEventLogOut]
+
+
+class NotificationLogOut(BaseModel):
+    id: int
+    user_id: str
+    alert_rule_id: int | None = None
+    ticker: str
+    title: str
+    body: str
+    onesignal_notification_id: str | None = None
+    status: str
+    created_at: str
+
+
+class NotificationLogListOut(BaseModel):
+    result: list[NotificationLogOut]
+
+
+class DeviceTelemetryOut(BaseModel):
+    id: int
+    user_id: str
+    platform: str
+    environment: str
+    has_apns_token: bool
+    apns_token_tail: str | None = None
+    has_onesignal_subscription: bool
+    onesignal_subscription_id_tail: str | None = None
+    device_model: str | None = None
+    device_os: str | None = None
+    app_version: str | None = None
+    created_at: str
+    last_seen_at: str
+
+
+class DeviceTelemetryListOut(BaseModel):
+    result: list[DeviceTelemetryOut]
+
+
+class TelemetryFailureOut(BaseModel):
+    source: str
+    user_id: str
+    alert_rule_id: int | None = None
+    ticker: str
+    reason: str
+    message: str
+    created_at: str
+
+
+class TelemetryFailureListOut(BaseModel):
+    result: list[TelemetryFailureOut]

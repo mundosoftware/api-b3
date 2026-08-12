@@ -160,6 +160,44 @@ def init_db(settings: Settings | None = None) -> None:
                 status TEXT NOT NULL,
                 created_at TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS alert_run_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id TEXT NOT NULL UNIQUE,
+                started_at TEXT NOT NULL,
+                finished_at TEXT,
+                status TEXT NOT NULL,
+                checked_tickers INTEGER NOT NULL DEFAULT 0,
+                evaluated_rules INTEGER NOT NULL DEFAULT 0,
+                triggered_rules INTEGER NOT NULL DEFAULT 0,
+                notifications_sent INTEGER NOT NULL DEFAULT 0,
+                failure_reason TEXT
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_alert_run_log_started
+                ON alert_run_log(started_at DESC);
+
+            CREATE TABLE IF NOT EXISTS alert_event_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id TEXT,
+                user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+                alert_rule_id INTEGER REFERENCES alert_rules(id) ON DELETE SET NULL,
+                ticker TEXT NOT NULL,
+                event_type TEXT NOT NULL,
+                reason TEXT NOT NULL,
+                message TEXT NOT NULL,
+                rule_timezone TEXT,
+                server_time TEXT,
+                local_time TEXT,
+                price REAL,
+                percent_change REAL,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_alert_event_log_created
+                ON alert_event_log(created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_alert_event_log_lookup
+                ON alert_event_log(user_id, ticker, event_type, reason);
             """
         )
         _ensure_column(db, "user_devices", "device_model", "TEXT")

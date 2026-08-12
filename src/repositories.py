@@ -50,6 +50,12 @@ def alert_from_row(row: sqlite3.Row) -> AlertRuleOut:
     )
 
 
+def identifier_tail(value: str | None) -> str | None:
+    if not value:
+        return None
+    return value[-8:]
+
+
 class Repository:
     def __init__(self, settings: Settings | None = None):
         self.settings = settings or get_settings()
@@ -59,7 +65,7 @@ class Repository:
         self, user_id: str, display_name: str | None = None, timezone: str | None = None
     ) -> dict[str, Any]:
         now = utc_now_iso()
-        user_timezone = timezone or self.settings.default_timezone
+        insert_timezone = timezone or self.settings.default_timezone
         with self.database.connect() as db:
             db.execute(
                 """
@@ -67,10 +73,10 @@ class Repository:
                 VALUES (?, ?, ?, ?, ?)
                 ON CONFLICT(user_id) DO UPDATE SET
                     display_name = COALESCE(excluded.display_name, users.display_name),
-                    timezone = COALESCE(excluded.timezone, users.timezone),
+                    timezone = COALESCE(?, users.timezone),
                     updated_at = excluded.updated_at
                 """,
-                (user_id, display_name, user_timezone, now, now),
+                (user_id, display_name, insert_timezone, now, now, timezone),
             )
             row = db.execute("SELECT * FROM users WHERE user_id = ?", (user_id,)).fetchone()
             return dict(row)
@@ -212,10 +218,11 @@ class Repository:
             ]
 
     def create_alert(self, user_id: str, request: AlertRuleCreateRequest) -> AlertRuleOut:
-        self.upsert_user(user_id, timezone=request.timezone)
+        user = self.upsert_user(user_id, timezone=request.timezone)
         ticker = normalize_ticker(request.ticker)
         now = utc_now_iso()
         weekdays = ",".join(str(day) for day in request.weekdays)
+        rule_timezone = request.timezone or user["timezone"] or self.settings.default_timezone
         with self.database.connect() as db:
             self._ensure_company(db, ticker)
             db.execute(
@@ -238,7 +245,7 @@ class Repository:
                     weekdays,
                     request.start_time,
                     request.end_time,
-                    request.timezone or self.settings.default_timezone,
+                    rule_timezone,
                     request.frequency_minutes,
                     request.cooldown_minutes,
                     now,
@@ -327,6 +334,39 @@ class Repository:
             ).fetchall()
             return [alert_from_row(row) for row in rows]
 
+    def list_alerts_for_telemetry(
+        self,
+        user_id: str | None = None,
+        ticker: str | None = None,
+        enabled: bool | None = None,
+        limit: int = 100,
+    ) -> list[AlertRuleOut]:
+        limit = max(1, min(limit, 500))
+        conditions: list[str] = []
+        params: list[Any] = []
+        if user_id:
+            conditions.append("user_id = ?")
+            params.append(user_id)
+        if ticker:
+            conditions.append("ticker = ?")
+            params.append(normalize_ticker(ticker))
+        if enabled is not None:
+            conditions.append("enabled = ?")
+            params.append(int(enabled))
+        where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        with self.database.connect() as db:
+            rows = db.execute(
+                f"""
+                SELECT *
+                FROM alert_rules
+                {where}
+                ORDER BY updated_at DESC, id DESC
+                LIMIT ?
+                """,
+                (*params, limit),
+            ).fetchall()
+            return [alert_from_row(row) for row in rows]
+
     def mark_alert_checked(
         self,
         alert_id: int,
@@ -334,8 +374,9 @@ class Repository:
         percent_change: float | None,
         baseline_price: float | None = None,
         triggered: bool = False,
+        checked_at: str | None = None,
     ) -> None:
-        now = utc_now_iso()
+        now = checked_at or utc_now_iso()
         with self.database.connect() as db:
             if triggered:
                 db.execute(
@@ -662,6 +703,291 @@ class Repository:
                     utc_now_iso(),
                 ),
             )
+
+    def log_alert_run_started(self, run_id: str, started_at: str) -> None:
+        with self.database.connect() as db:
+            db.execute(
+                """
+                INSERT INTO alert_run_log(run_id, started_at, status)
+                VALUES (?, ?, 'running')
+                ON CONFLICT(run_id) DO NOTHING
+                """,
+                (run_id, started_at),
+            )
+
+    def finish_alert_run(
+        self,
+        run_id: str,
+        finished_at: str,
+        status: str,
+        checked_tickers: int,
+        evaluated_rules: int,
+        triggered_rules: int,
+        notifications_sent: int,
+        failure_reason: str | None = None,
+    ) -> None:
+        with self.database.connect() as db:
+            db.execute(
+                """
+                UPDATE alert_run_log SET
+                    finished_at = ?,
+                    status = ?,
+                    checked_tickers = ?,
+                    evaluated_rules = ?,
+                    triggered_rules = ?,
+                    notifications_sent = ?,
+                    failure_reason = ?
+                WHERE run_id = ?
+                """,
+                (
+                    finished_at,
+                    status,
+                    checked_tickers,
+                    evaluated_rules,
+                    triggered_rules,
+                    notifications_sent,
+                    failure_reason,
+                    run_id,
+                ),
+            )
+
+    def log_alert_event(
+        self,
+        user_id: str,
+        alert_rule_id: int,
+        ticker: str,
+        event_type: str,
+        reason: str,
+        message: str,
+        run_id: str | None = None,
+        rule_timezone: str | None = None,
+        server_time: str | None = None,
+        local_time: str | None = None,
+        price: float | None = None,
+        percent_change: float | None = None,
+    ) -> None:
+        with self.database.connect() as db:
+            db.execute(
+                """
+                INSERT INTO alert_event_log(
+                    run_id, user_id, alert_rule_id, ticker, event_type,
+                    reason, message, rule_timezone, server_time, local_time,
+                    price, percent_change, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    run_id,
+                    user_id,
+                    alert_rule_id,
+                    normalize_ticker(ticker),
+                    event_type,
+                    reason,
+                    message,
+                    rule_timezone,
+                    server_time,
+                    local_time,
+                    price,
+                    percent_change,
+                    utc_now_iso(),
+                ),
+            )
+
+    def list_alert_run_logs(
+        self, limit: int = 100, status: str | None = None
+    ) -> list[dict[str, Any]]:
+        limit = max(1, min(limit, 500))
+        conditions: list[str] = []
+        params: list[Any] = []
+        if status:
+            conditions.append("status = ?")
+            params.append(status)
+        where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        with self.database.connect() as db:
+            rows = db.execute(
+                f"""
+                SELECT *
+                FROM alert_run_log
+                {where}
+                ORDER BY started_at DESC, id DESC
+                LIMIT ?
+                """,
+                (*params, limit),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    def list_alert_event_logs(
+        self,
+        limit: int = 100,
+        event_type: str | None = None,
+        reason: str | None = None,
+        user_id: str | None = None,
+        ticker: str | None = None,
+    ) -> list[dict[str, Any]]:
+        limit = max(1, min(limit, 500))
+        conditions: list[str] = []
+        params: list[Any] = []
+        if event_type:
+            conditions.append("event_type = ?")
+            params.append(event_type)
+        if reason:
+            conditions.append("reason = ?")
+            params.append(reason)
+        if user_id:
+            conditions.append("user_id = ?")
+            params.append(user_id)
+        if ticker:
+            conditions.append("ticker = ?")
+            params.append(normalize_ticker(ticker))
+        where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        with self.database.connect() as db:
+            rows = db.execute(
+                f"""
+                SELECT *
+                FROM alert_event_log
+                {where}
+                ORDER BY created_at DESC, id DESC
+                LIMIT ?
+                """,
+                (*params, limit),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    def list_notification_logs(
+        self,
+        limit: int = 100,
+        status: str | None = None,
+        failures_only: bool = False,
+        user_id: str | None = None,
+        ticker: str | None = None,
+    ) -> list[dict[str, Any]]:
+        limit = max(1, min(limit, 500))
+        conditions: list[str] = []
+        params: list[Any] = []
+        if status:
+            conditions.append("status LIKE ?")
+            params.append(f"{status}%")
+        if failures_only:
+            conditions.append("status NOT LIKE 'sent%'")
+        if user_id:
+            conditions.append("user_id = ?")
+            params.append(user_id)
+        if ticker:
+            conditions.append("ticker = ?")
+            params.append(normalize_ticker(ticker))
+        where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        with self.database.connect() as db:
+            rows = db.execute(
+                f"""
+                SELECT *
+                FROM notification_log
+                {where}
+                ORDER BY created_at DESC, id DESC
+                LIMIT ?
+                """,
+                (*params, limit),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    def list_device_telemetry(
+        self,
+        limit: int = 100,
+        user_id: str | None = None,
+        platform: str | None = None,
+    ) -> list[dict[str, Any]]:
+        limit = max(1, min(limit, 500))
+        conditions: list[str] = []
+        params: list[Any] = []
+        if user_id:
+            conditions.append("user_id = ?")
+            params.append(user_id)
+        if platform:
+            conditions.append("platform = ?")
+            params.append(platform)
+        where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        with self.database.connect() as db:
+            rows = db.execute(
+                f"""
+                SELECT *
+                FROM user_devices
+                {where}
+                ORDER BY last_seen_at DESC, id DESC
+                LIMIT ?
+                """,
+                (*params, limit),
+            ).fetchall()
+            return [
+                {
+                    "id": row["id"],
+                    "user_id": row["user_id"],
+                    "platform": row["platform"],
+                    "environment": row["environment"],
+                    "has_apns_token": bool(row["apns_token"]),
+                    "apns_token_tail": identifier_tail(row["apns_token"]),
+                    "has_onesignal_subscription": bool(row["onesignal_subscription_id"]),
+                    "onesignal_subscription_id_tail": identifier_tail(
+                        row["onesignal_subscription_id"]
+                    ),
+                    "device_model": row["device_model"],
+                    "device_os": row["device_os"],
+                    "app_version": row["app_version"],
+                    "created_at": row["created_at"],
+                    "last_seen_at": row["last_seen_at"],
+                }
+                for row in rows
+            ]
+
+    def list_failure_telemetry(
+        self,
+        limit: int = 100,
+        user_id: str | None = None,
+        ticker: str | None = None,
+    ) -> list[dict[str, Any]]:
+        limit = max(1, min(limit, 500))
+        filters = []
+        params: list[Any] = []
+        if user_id:
+            filters.append("user_id = ?")
+            params.append(user_id)
+        if ticker:
+            filters.append("ticker = ?")
+            params.append(normalize_ticker(ticker))
+        where = f"AND {' AND '.join(filters)}" if filters else ""
+        with self.database.connect() as db:
+            rows = db.execute(
+                f"""
+                SELECT *
+                FROM (
+                    SELECT
+                        'alert_event' AS source,
+                        user_id,
+                        alert_rule_id,
+                        ticker,
+                        reason,
+                        message,
+                        created_at
+                    FROM alert_event_log
+                    WHERE event_type IN ('failure', 'error')
+                    {where}
+                    UNION ALL
+                    SELECT
+                        'notification' AS source,
+                        user_id,
+                        alert_rule_id,
+                        ticker,
+                        status AS reason,
+                        body AS message,
+                        created_at
+                    FROM notification_log
+                    WHERE status NOT LIKE 'sent%'
+                    {where}
+                )
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                (*params, *params, limit),
+            ).fetchall()
+            return [dict(row) for row in rows]
 
     def _favorite_row(
         self, db: sqlite3.Connection, user_id: str, ticker: str

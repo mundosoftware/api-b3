@@ -15,7 +15,11 @@ from src.models import (
     AlertRuleListOut,
     AlertRuleOut,
     AlertRuleUpdateRequest,
+    AlertEventLogListOut,
+    AlertRunLogListOut,
+    AlertTelemetryStatusListOut,
     CompanyListOut,
+    DeviceTelemetryListOut,
     DeviceRegistrationOut,
     DeviceRegistrationRequest,
     DeviceUnregisterOut,
@@ -26,13 +30,16 @@ from src.models import (
     IOSDeviceRegistrationRequest,
     NotificationPreferencesOut,
     NotificationPreferencesUpdateRequest,
+    NotificationLogListOut,
     QuoteOut,
     RunChecksOut,
+    TelemetryFailureListOut,
     UserOut,
     UserUpsertRequest,
 )
 from src.onesignal import OneSignalClient, OneSignalError
 from src.repositories import Repository
+from src.telemetry import TelemetryService
 from src.tickers import QuoteLookupError, TickerService
 
 
@@ -42,6 +49,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ticker_service = TickerService(repository, settings)
     onesignal = OneSignalClient(settings)
     alert_engine = AlertEngine(repository, ticker_service, onesignal, settings)
+    telemetry = TelemetryService(repository, alert_engine)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -262,6 +270,109 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def run_checks(x_admin_token: str | None = Header(default=None)) -> RunChecksOut:
         require_admin(x_admin_token)
         return await run_in_threadpool(alert_engine.run_due_checks)
+
+    @app.get("/admin/telemetry/alert-status", response_model=AlertTelemetryStatusListOut)
+    async def telemetry_alert_status(
+        x_admin_token: str | None = Header(default=None),
+        user_id: str | None = Query(default=None),
+        ticker: str | None = Query(default=None),
+        enabled: bool | None = Query(default=None),
+        limit: int = Query(default=100, ge=1, le=500),
+        now: str | None = Query(default=None),
+    ) -> AlertTelemetryStatusListOut:
+        require_admin(x_admin_token)
+        return AlertTelemetryStatusListOut(
+            result=telemetry.alert_statuses(
+                user_id=user_id,
+                ticker=ticker,
+                enabled=enabled,
+                limit=limit,
+                now=now,
+            )
+        )
+
+    @app.get("/admin/telemetry/alert-runs", response_model=AlertRunLogListOut)
+    async def telemetry_alert_runs(
+        x_admin_token: str | None = Header(default=None),
+        status_filter: str | None = Query(default=None, alias="status"),
+        limit: int = Query(default=100, ge=1, le=500),
+    ) -> AlertRunLogListOut:
+        require_admin(x_admin_token)
+        return AlertRunLogListOut(
+            result=repository.list_alert_run_logs(limit=limit, status=status_filter)
+        )
+
+    @app.get("/admin/telemetry/alert-events", response_model=AlertEventLogListOut)
+    async def telemetry_alert_events(
+        x_admin_token: str | None = Header(default=None),
+        event_type: str | None = Query(default=None),
+        reason: str | None = Query(default=None),
+        user_id: str | None = Query(default=None),
+        ticker: str | None = Query(default=None),
+        limit: int = Query(default=100, ge=1, le=500),
+    ) -> AlertEventLogListOut:
+        require_admin(x_admin_token)
+        return AlertEventLogListOut(
+            result=repository.list_alert_event_logs(
+                limit=limit,
+                event_type=event_type,
+                reason=reason,
+                user_id=user_id,
+                ticker=ticker,
+            )
+        )
+
+    @app.get("/admin/telemetry/notifications", response_model=NotificationLogListOut)
+    async def telemetry_notifications(
+        x_admin_token: str | None = Header(default=None),
+        status_filter: str | None = Query(default=None, alias="status"),
+        failures_only: bool = Query(default=False),
+        user_id: str | None = Query(default=None),
+        ticker: str | None = Query(default=None),
+        limit: int = Query(default=100, ge=1, le=500),
+    ) -> NotificationLogListOut:
+        require_admin(x_admin_token)
+        return NotificationLogListOut(
+            result=repository.list_notification_logs(
+                limit=limit,
+                status=status_filter,
+                failures_only=failures_only,
+                user_id=user_id,
+                ticker=ticker,
+            )
+        )
+
+    @app.get("/admin/telemetry/devices", response_model=DeviceTelemetryListOut)
+    async def telemetry_devices(
+        x_admin_token: str | None = Header(default=None),
+        user_id: str | None = Query(default=None),
+        platform: Literal["ios", "watchos"] | None = Query(default=None),
+        limit: int = Query(default=100, ge=1, le=500),
+    ) -> DeviceTelemetryListOut:
+        require_admin(x_admin_token)
+        return DeviceTelemetryListOut(
+            result=repository.list_device_telemetry(
+                limit=limit,
+                user_id=user_id,
+                platform=platform,
+            )
+        )
+
+    @app.get("/admin/telemetry/failures", response_model=TelemetryFailureListOut)
+    async def telemetry_failures(
+        x_admin_token: str | None = Header(default=None),
+        user_id: str | None = Query(default=None),
+        ticker: str | None = Query(default=None),
+        limit: int = Query(default=100, ge=1, le=500),
+    ) -> TelemetryFailureListOut:
+        require_admin(x_admin_token)
+        return TelemetryFailureListOut(
+            result=repository.list_failure_telemetry(
+                limit=limit,
+                user_id=user_id,
+                ticker=ticker,
+            )
+        )
 
     # Legacy compatibility routes.
     @app.get("/get-ticker/{ticker}")

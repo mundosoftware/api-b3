@@ -55,8 +55,16 @@ Main endpoints:
 - `PATCH /users/{user_id}/alerts/{alert_id}`
 - `DELETE /users/{user_id}/alerts/{alert_id}`
 - `POST /admin/run-checks`
+- `GET /admin/telemetry/alert-status`
+- `GET /admin/telemetry/alert-runs`
+- `GET /admin/telemetry/alert-events`
+- `GET /admin/telemetry/notifications`
+- `GET /admin/telemetry/devices`
+- `GET /admin/telemetry/failures`
 
 When OneSignal/APNs reports stale push subscriptions during alert delivery, the server deletes the matching OneSignal subscriptions and removes the corresponding `user_devices` rows. This is the reliable cleanup point for uninstalls: Apple can delay invalid-token reporting, so removal may happen only after later send attempts. The explicit unregister endpoint is for cases where a client can still call the API, such as logout or a deliberate local notification cleanup.
+
+Telemetry endpoints require the same `X-Admin-Token` as `POST /admin/run-checks`. cURL examples are in `docs/telemetry-curls.md`.
 
 Alert rules support:
 
