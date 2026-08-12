@@ -63,7 +63,7 @@ final class AppLanguage: ObservableObject {
     }
 
     private static let localized: [String: [AppLanguageCode: String]] = [
-        "app.title": [.pt: "B3 Watch", .en: "B3 Watch"],
+        "app.title": [.pt: "Trade Alert", .en: "Trade Alert"],
         "tab.tracked": [.pt: "Acompanhadas", .en: "Tracked"],
         "tab.search": [.pt: "Buscar", .en: "Search"],
         "tab.notifications": [.pt: "Notificações", .en: "Notifications"],
