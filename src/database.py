@@ -198,6 +198,42 @@ def init_db(settings: Settings | None = None) -> None:
                 ON alert_event_log(created_at DESC);
             CREATE INDEX IF NOT EXISTS idx_alert_event_log_lookup
                 ON alert_event_log(user_id, ticker, event_type, reason);
+
+            CREATE TABLE IF NOT EXISTS iap_telemetry_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+                event_type TEXT NOT NULL,
+                product_id TEXT,
+                product_type TEXT,
+                subscription_group_id TEXT,
+                transaction_id TEXT,
+                original_transaction_id TEXT,
+                offer_id TEXT,
+                offer_type TEXT,
+                storefront TEXT,
+                currency_code TEXT,
+                display_price TEXT,
+                price REAL,
+                trial_days INTEGER,
+                status TEXT,
+                reason TEXT,
+                message TEXT,
+                platform TEXT,
+                environment TEXT,
+                app_version TEXT,
+                device_model TEXT,
+                device_os TEXT,
+                language TEXT,
+                occurred_at TEXT,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_iap_telemetry_user_created
+                ON iap_telemetry_events(user_id, created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_iap_telemetry_product_created
+                ON iap_telemetry_events(product_id, created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_iap_telemetry_type_created
+                ON iap_telemetry_events(event_type, created_at DESC);
             """
         )
         _ensure_column(db, "user_devices", "device_model", "TEXT")

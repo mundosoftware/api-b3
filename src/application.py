@@ -28,6 +28,10 @@ from src.models import (
     FavoriteListOut,
     FavoriteOut,
     IOSDeviceRegistrationRequest,
+    IAPTelemetryEventCreateRequest,
+    IAPTelemetryEventListOut,
+    IAPTelemetryEventOut,
+    IAPTelemetrySummaryOut,
     NotificationPreferencesOut,
     NotificationPreferencesUpdateRequest,
     NotificationLogListOut,
@@ -215,6 +219,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             **repository.update_notification_preferences(user_id, request)
         )
 
+    @app.post(
+        "/users/{user_id}/iap/telemetry",
+        response_model=IAPTelemetryEventOut,
+        status_code=status.HTTP_201_CREATED,
+    )
+    async def record_iap_telemetry(
+        user_id: str, request: IAPTelemetryEventCreateRequest
+    ) -> IAPTelemetryEventOut:
+        return IAPTelemetryEventOut(**repository.record_iap_telemetry_event(user_id, request))
+
     @app.get("/users/{user_id}/favorites", response_model=FavoriteListOut)
     async def list_favorites(user_id: str) -> FavoriteListOut:
         return FavoriteListOut(result=repository.list_favorites(user_id))
@@ -339,6 +353,46 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 failures_only=failures_only,
                 user_id=user_id,
                 ticker=ticker,
+            )
+        )
+
+    @app.get("/admin/telemetry/iap-events", response_model=IAPTelemetryEventListOut)
+    async def telemetry_iap_events(
+        x_admin_token: str | None = Header(default=None),
+        user_id: str | None = Query(default=None),
+        product_id: str | None = Query(default=None),
+        event_type: str | None = Query(default=None),
+        status_filter: str | None = Query(default=None, alias="status"),
+        environment: str | None = Query(default=None),
+        limit: int = Query(default=100, ge=1, le=500),
+    ) -> IAPTelemetryEventListOut:
+        require_admin(x_admin_token)
+        return IAPTelemetryEventListOut(
+            result=repository.list_iap_telemetry_events(
+                limit=limit,
+                user_id=user_id,
+                product_id=product_id,
+                event_type=event_type,
+                status=status_filter,
+                environment=environment,
+            )
+        )
+
+    @app.get("/admin/telemetry/iap-summary", response_model=IAPTelemetrySummaryOut)
+    async def telemetry_iap_summary(
+        x_admin_token: str | None = Header(default=None),
+        user_id: str | None = Query(default=None),
+        product_id: str | None = Query(default=None),
+        environment: str | None = Query(default=None),
+        hours: int = Query(default=24, ge=1, le=8760),
+    ) -> IAPTelemetrySummaryOut:
+        require_admin(x_admin_token)
+        return IAPTelemetrySummaryOut(
+            **repository.summarize_iap_telemetry(
+                hours=hours,
+                user_id=user_id,
+                product_id=product_id,
+                environment=environment,
             )
         )
 

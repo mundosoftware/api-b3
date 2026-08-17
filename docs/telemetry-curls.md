@@ -8,6 +8,114 @@ Replace these placeholders:
 - `{{ADMIN_TOKEN}}`: the value from `{{ADMIN_TOKEN}}` in `local.env`.
 - `{{USER_ID}}`: the app user id to inspect.
 - `{{TICKER}}`: ticker to inspect.
+- `{{PRODUCT_ID}}`: StoreKit product id, for example `pro_year`, `pro_month`, or `lifetime_unlock`.
+
+Record a paywall view from the app:
+
+```bash
+curl --request POST "{{API_BASE}}/users/{{USER_ID}}/iap/telemetry" \
+  --header "Content-Type: application/json" \
+  --data '{
+    "event_type": "paywall_view",
+    "platform": "ios",
+    "environment": "production",
+    "app_version": "1.2.0",
+    "device_model": "iPhone",
+    "device_os": "iOS 18.6",
+    "language": "pt"
+  }'
+```
+
+Record loaded StoreKit products, including the yearly trial and promotional offer:
+
+```bash
+curl --request POST "{{API_BASE}}/users/{{USER_ID}}/iap/telemetry" \
+  --header "Content-Type: application/json" \
+  --data '{
+    "event_type": "products_loaded",
+    "product_id": "pro_year",
+    "product_type": "auto_renewable_subscription",
+    "subscription_group_id": "22314965",
+    "offer_id": "start_promo",
+    "offer_type": "promotional",
+    "storefront": "BRA",
+    "currency_code": "BRL",
+    "display_price": "R$ 24,90",
+    "price": 24.90,
+    "trial_days": 7,
+    "status": "available",
+    "platform": "ios",
+    "environment": "production",
+    "app_version": "1.2.0",
+    "language": "pt"
+  }'
+```
+
+Record a StoreKit product loading failure:
+
+```bash
+curl --request POST "{{API_BASE}}/users/{{USER_ID}}/iap/telemetry" \
+  --header "Content-Type: application/json" \
+  --data '{
+    "event_type": "product_unavailable",
+    "product_id": "pro_year",
+    "status": "missing",
+    "reason": "storekit_product_not_loaded",
+    "message": "Could not load Pro Yearly from the App Store. Loaded products: lifetime_unlock, pro_month",
+    "platform": "ios",
+    "environment": "sandbox"
+  }'
+```
+
+Record a successful purchase or trial enrollment:
+
+```bash
+curl --request POST "{{API_BASE}}/users/{{USER_ID}}/iap/telemetry" \
+  --header "Content-Type: application/json" \
+  --data '{
+    "event_type": "purchase_succeeded",
+    "product_id": "pro_year",
+    "product_type": "auto_renewable_subscription",
+    "transaction_id": "2000000000000001",
+    "original_transaction_id": "2000000000000001",
+    "status": "verified",
+    "platform": "ios",
+    "environment": "production"
+  }'
+```
+
+Record a restore result:
+
+```bash
+curl --request POST "{{API_BASE}}/users/{{USER_ID}}/iap/telemetry" \
+  --header "Content-Type: application/json" \
+  --data '{
+    "event_type": "restore_succeeded",
+    "product_id": "lifetime_unlock",
+    "product_type": "non_consumable",
+    "status": "entitlement_active",
+    "platform": "ios",
+    "environment": "production"
+  }'
+```
+
+List IAP and subscription telemetry:
+
+```bash
+curl --request GET "{{API_BASE}}/admin/telemetry/iap-events?user_id={{USER_ID}}&product_id={{PRODUCT_ID}}&limit=50" --header "X-Admin-Token: {{ADMIN_TOKEN}}"
+```
+
+List unavailable StoreKit product diagnostics:
+
+```bash
+curl --request GET "{{API_BASE}}/admin/telemetry/iap-events?event_type=product_unavailable&limit=50" --header "X-Admin-Token: {{ADMIN_TOKEN}}"
+```
+
+Summarize recent IAP and subscription telemetry:
+
+```bash
+curl --request GET "{{API_BASE}}/admin/telemetry/iap-summary?user_id={{USER_ID}}&hours=24" --header "X-Admin-Token: {{ADMIN_TOKEN}}"
+```
 
 Run a check cycle manually:
 

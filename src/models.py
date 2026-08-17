@@ -272,6 +272,64 @@ class NotificationLogListOut(BaseModel):
     result: list[NotificationLogOut]
 
 
+class IAPTelemetryEventCreateRequest(BaseModel):
+    event_type: str = Field(min_length=1, max_length=64)
+    product_id: str | None = Field(default=None, max_length=128)
+    product_type: str | None = Field(default=None, max_length=64)
+    subscription_group_id: str | None = Field(default=None, max_length=128)
+    transaction_id: str | None = Field(default=None, max_length=128)
+    original_transaction_id: str | None = Field(default=None, max_length=128)
+    offer_id: str | None = Field(default=None, max_length=128)
+    offer_type: str | None = Field(default=None, max_length=64)
+    storefront: str | None = Field(default=None, max_length=16)
+    currency_code: str | None = Field(default=None, max_length=8)
+    display_price: str | None = Field(default=None, max_length=32)
+    price: float | None = Field(default=None, ge=0)
+    trial_days: int | None = Field(default=None, ge=0, le=366)
+    status: str | None = Field(default=None, max_length=64)
+    reason: str | None = Field(default=None, max_length=128)
+    message: str | None = Field(default=None, max_length=512)
+    platform: str | None = Field(default="ios", max_length=16)
+    environment: str | None = Field(default=None, max_length=32)
+    app_version: str | None = Field(default=None, max_length=40)
+    device_model: str | None = Field(default=None, max_length=80)
+    device_os: str | None = Field(default=None, max_length=40)
+    language: str | None = Field(default=None, max_length=16)
+    occurred_at: str | None = Field(default=None, max_length=40)
+
+
+class IAPTelemetryEventOut(IAPTelemetryEventCreateRequest):
+    id: int
+    user_id: str
+    created_at: str
+
+
+class IAPTelemetryEventListOut(BaseModel):
+    result: list[IAPTelemetryEventOut]
+
+
+class IAPTelemetryCountOut(BaseModel):
+    name: str
+    count: int
+
+
+class IAPTelemetryProductSummaryOut(BaseModel):
+    product_id: str | None = None
+    event_type: str
+    status: str | None = None
+    count: int
+
+
+class IAPTelemetrySummaryOut(BaseModel):
+    window_hours: int
+    user_id: str | None = None
+    product_id: str | None = None
+    total_events: int
+    by_event_type: list[IAPTelemetryCountOut]
+    by_product: list[IAPTelemetryProductSummaryOut]
+    latest_events: list[IAPTelemetryEventOut]
+
+
 class DeviceTelemetryOut(BaseModel):
     id: int
     user_id: str

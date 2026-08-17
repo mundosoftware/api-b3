@@ -1,5 +1,6 @@
 import sqlite3
 from collections.abc import Sequence
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from src.config import Settings, get_settings
@@ -8,6 +9,7 @@ from src.models import (
     AlertRuleCreateRequest,
     AlertRuleOut,
     AlertRuleUpdateRequest,
+    IAPTelemetryEventCreateRequest,
     NotificationPreferencesUpdateRequest,
 )
 
@@ -889,6 +891,148 @@ class Repository:
             ).fetchall()
             return [dict(row) for row in rows]
 
+    def record_iap_telemetry_event(
+        self, user_id: str, request: IAPTelemetryEventCreateRequest
+    ) -> dict[str, Any]:
+        self.upsert_user(user_id)
+        now = utc_now_iso()
+        payload = request.model_dump()
+        with self.database.connect() as db:
+            db.execute(
+                """
+                INSERT INTO iap_telemetry_events(
+                    user_id, event_type, product_id, product_type, subscription_group_id,
+                    transaction_id, original_transaction_id, offer_id, offer_type,
+                    storefront, currency_code, display_price, price, trial_days,
+                    status, reason, message, platform, environment, app_version,
+                    device_model, device_os, language, occurred_at, created_at
+                )
+                VALUES (
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                )
+                """,
+                (
+                    user_id,
+                    payload["event_type"],
+                    payload["product_id"],
+                    payload["product_type"],
+                    payload["subscription_group_id"],
+                    payload["transaction_id"],
+                    payload["original_transaction_id"],
+                    payload["offer_id"],
+                    payload["offer_type"],
+                    payload["storefront"],
+                    payload["currency_code"],
+                    payload["display_price"],
+                    payload["price"],
+                    payload["trial_days"],
+                    payload["status"],
+                    payload["reason"],
+                    payload["message"],
+                    payload["platform"],
+                    payload["environment"],
+                    payload["app_version"],
+                    payload["device_model"],
+                    payload["device_os"],
+                    payload["language"],
+                    payload["occurred_at"],
+                    now,
+                ),
+            )
+            row = db.execute(
+                "SELECT * FROM iap_telemetry_events WHERE id = last_insert_rowid()"
+            ).fetchone()
+            return dict(row)
+
+    def list_iap_telemetry_events(
+        self,
+        limit: int = 100,
+        user_id: str | None = None,
+        product_id: str | None = None,
+        event_type: str | None = None,
+        status: str | None = None,
+        environment: str | None = None,
+        since: str | None = None,
+    ) -> list[dict[str, Any]]:
+        limit = max(1, min(limit, 500))
+        where, params = self._iap_telemetry_filters(
+            user_id=user_id,
+            product_id=product_id,
+            event_type=event_type,
+            status=status,
+            environment=environment,
+            since=since,
+        )
+        with self.database.connect() as db:
+            rows = db.execute(
+                f"""
+                SELECT *
+                FROM iap_telemetry_events
+                {where}
+                ORDER BY created_at DESC, id DESC
+                LIMIT ?
+                """,
+                (*params, limit),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    def summarize_iap_telemetry(
+        self,
+        hours: int = 24,
+        user_id: str | None = None,
+        product_id: str | None = None,
+        environment: str | None = None,
+    ) -> dict[str, Any]:
+        hours = max(1, min(hours, 8760))
+        since = datetime.now(UTC).replace(microsecond=0) - timedelta(hours=hours)
+        where, params = self._iap_telemetry_filters(
+            user_id=user_id,
+            product_id=product_id,
+            environment=environment,
+            since=since.isoformat(),
+        )
+        with self.database.connect() as db:
+            total_events = db.execute(
+                f"SELECT COUNT(*) AS count FROM iap_telemetry_events {where}",
+                params,
+            ).fetchone()["count"]
+            by_event_type = db.execute(
+                f"""
+                SELECT event_type AS name, COUNT(*) AS count
+                FROM iap_telemetry_events
+                {where}
+                GROUP BY event_type
+                ORDER BY count DESC, event_type
+                """,
+                params,
+            ).fetchall()
+            by_product = db.execute(
+                f"""
+                SELECT product_id, event_type, status, COUNT(*) AS count
+                FROM iap_telemetry_events
+                {where}
+                GROUP BY product_id, event_type, status
+                ORDER BY count DESC, product_id, event_type, status
+                """,
+                params,
+            ).fetchall()
+
+        return {
+            "window_hours": hours,
+            "user_id": user_id,
+            "product_id": product_id,
+            "total_events": total_events,
+            "by_event_type": [dict(row) for row in by_event_type],
+            "by_product": [dict(row) for row in by_product],
+            "latest_events": self.list_iap_telemetry_events(
+                limit=10,
+                user_id=user_id,
+                product_id=product_id,
+                environment=environment,
+                since=since.isoformat(),
+            ),
+        }
+
     def list_device_telemetry(
         self,
         limit: int = 100,
@@ -1028,6 +1172,38 @@ class Repository:
             """,
             (user_id, now),
         )
+
+    def _iap_telemetry_filters(
+        self,
+        user_id: str | None = None,
+        product_id: str | None = None,
+        event_type: str | None = None,
+        status: str | None = None,
+        environment: str | None = None,
+        since: str | None = None,
+    ) -> tuple[str, list[Any]]:
+        conditions: list[str] = []
+        params: list[Any] = []
+        if user_id:
+            conditions.append("user_id = ?")
+            params.append(user_id)
+        if product_id:
+            conditions.append("product_id = ?")
+            params.append(product_id)
+        if event_type:
+            conditions.append("event_type = ?")
+            params.append(event_type)
+        if status:
+            conditions.append("status = ?")
+            params.append(status)
+        if environment:
+            conditions.append("environment = ?")
+            params.append(environment)
+        if since:
+            conditions.append("created_at >= ?")
+            params.append(since)
+        where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        return where, params
 
     def _preference_dict(self, row: sqlite3.Row) -> dict[str, Any]:
         return {
