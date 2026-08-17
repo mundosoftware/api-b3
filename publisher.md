@@ -2,7 +2,7 @@
 
 ## Promotional Text
 
-Track B3 tickers and receive price alerts on Apple Watch with fast Brazilian stock quotes, favorites, and smart notification rules.
+Track B3 tickers and receive price alerts on your devicews with fast Brazilian stock quotes, favorites, and smart notification rules.
 
 ## Subtitle
 
@@ -38,7 +38,7 @@ This app uses watch notifications and connects to a backend service to register 
 
 ### Texto Promocional
 
-Acompanhe tickers B3 e receba alertas de preço no Apple Watch com cotações brasileiras rápidas, favoritos e regras inteligentes de notificação.
+Acompanhe tickers B3 e receba alertas de preço nos seus dispositivos com cotações brasileiras rápidas, favoritos e regras inteligentes de notificação.
 
 ### Subtítulo
 

@@ -12,12 +12,14 @@ struct Trade_AltertApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var model = CompanionAppModel.shared
     @StateObject private var language = AppLanguage.shared
+    @StateObject private var purchases = PurchaseStore.shared
 
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environmentObject(model)
                 .environmentObject(language)
+                .environmentObject(purchases)
                 .environment(\.locale, language.locale)
                 .onChange(of: language.code) { _, newLanguage in
                     OneSignalService.shared.setLanguage(newLanguage.rawValue)

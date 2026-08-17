@@ -10,10 +10,45 @@ import SwiftUI
 struct ContentView: View {
     @EnvironmentObject private var model: CompanionAppModel
     @EnvironmentObject private var language: AppLanguage
+    @EnvironmentObject private var purchases: PurchaseStore
     @State private var showOneSignalIntegrationAlert = false
     @State private var pushSubscriptionObserver: OneSignalPushSubscriptionObserver?
+    @State private var didBootstrap = false
 
     var body: some View {
+        Group {
+            if purchases.hasAccess {
+                appTabs
+            } else if purchases.hasResolvedAccess {
+                PaywallView()
+            } else {
+                StoreAccessLoadingView()
+            }
+        }
+        .task {
+            await purchases.load()
+        }
+        .task(id: purchases.hasAccess) {
+            guard purchases.hasAccess, !didBootstrap else { return }
+            await model.bootstrap()
+            didBootstrap = true
+            refreshOneSignalIntegrationAlert()
+        }
+        .onChange(of: model.iosNotificationsEnabled) { _, _ in
+            guard purchases.hasAccess else { return }
+            refreshOneSignalIntegrationAlert()
+        }
+        .alert(language.text("title.error"), isPresented: Binding(
+            get: { model.errorMessage != nil },
+            set: { if !$0 { model.errorMessage = nil } }
+        )) {
+            Button(language.text("action.ok"), role: .cancel) {}
+        } message: {
+            Text(model.errorMessage ?? "")
+        }
+    }
+
+    private var appTabs: some View {
         TabView {
             NavigationStack {
                 TrackedCompaniesView()
@@ -37,13 +72,6 @@ struct ContentView: View {
             }
         }
         .onAppear(perform: configureOneSignalVerification)
-        .task {
-            await model.bootstrap()
-            refreshOneSignalIntegrationAlert()
-        }
-        .onChange(of: model.iosNotificationsEnabled) { _ in
-            refreshOneSignalIntegrationAlert()
-        }
         .alert(language.text("title.almost_ready"), isPresented: $showOneSignalIntegrationAlert) {
             Button(language.text("action.allow_notifications")) {
                 Task {
@@ -56,14 +84,6 @@ struct ContentView: View {
             }
         } message: {
             Text(language.text("message.notification_permission"))
-        }
-        .alert(language.text("title.error"), isPresented: Binding(
-            get: { model.errorMessage != nil },
-            set: { if !$0 { model.errorMessage = nil } }
-        )) {
-            Button(language.text("action.ok"), role: .cancel) {}
-        } message: {
-            Text(model.errorMessage ?? "")
         }
     }
 
@@ -100,5 +120,6 @@ struct ContentView_Previews: PreviewProvider {
         ContentView()
             .environmentObject(CompanionAppModel.shared)
             .environmentObject(AppLanguage.shared)
+            .environmentObject(PurchaseStore.shared)
     }
 }
