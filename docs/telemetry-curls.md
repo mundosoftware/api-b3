@@ -111,11 +111,55 @@ List unavailable StoreKit product diagnostics:
 curl --request GET "{{API_BASE}}/admin/telemetry/iap-events?event_type=product_unavailable&limit=50" --header "X-Admin-Token: {{ADMIN_TOKEN}}"
 ```
 
+List buying attempts, including purchase started, pending, succeeded, failed, cancelled and restore attempts:
+
+```bash
+curl --request GET "{{API_BASE}}/admin/telemetry/iap-buying-attempts?user_id={{USER_ID}}&product_id={{PRODUCT_ID}}&hours=24&limit=50" --header "X-Admin-Token: {{ADMIN_TOKEN}}"
+```
+
+List only purchase attempts, excluding restore attempts:
+
+```bash
+curl --request GET "{{API_BASE}}/admin/telemetry/iap-buying-attempts?include_restore=false&hours=24&limit=50" --header "X-Admin-Token: {{ADMIN_TOKEN}}"
+```
+
+List subscribed or paying users derived from the latest active entitlement telemetry:
+
+```bash
+curl --request GET "{{API_BASE}}/admin/telemetry/iap-paying-users?environment=production&limit=50" --header "X-Admin-Token: {{ADMIN_TOKEN}}"
+```
+
+List subscribed or paying users for one StoreKit product:
+
+```bash
+curl --request GET "{{API_BASE}}/admin/telemetry/iap-paying-users?product_id={{PRODUCT_ID}}&environment=production&limit=50" --header "X-Admin-Token: {{ADMIN_TOKEN}}"
+```
+
+List subscription and IAP success/failure outcomes grouped by product, status and reason:
+
+```bash
+curl --request GET "{{API_BASE}}/admin/telemetry/iap-outcomes?outcome=all&hours=24" --header "X-Admin-Token: {{ADMIN_TOKEN}}"
+```
+
+List subscription and IAP failures with reason counts:
+
+```bash
+curl --request GET "{{API_BASE}}/admin/telemetry/iap-outcomes?outcome=failure&product_id={{PRODUCT_ID}}&hours=24" --header "X-Admin-Token: {{ADMIN_TOKEN}}"
+```
+
+List subscription and IAP successes:
+
+```bash
+curl --request GET "{{API_BASE}}/admin/telemetry/iap-outcomes?outcome=success&hours=24" --header "X-Admin-Token: {{ADMIN_TOKEN}}"
+```
+
 Summarize recent IAP and subscription telemetry:
 
 ```bash
 curl --request GET "{{API_BASE}}/admin/telemetry/iap-summary?user_id={{USER_ID}}&hours=24" --header "X-Admin-Token: {{ADMIN_TOKEN}}"
 ```
+
+The IAP paying-user and outcome endpoints are operational telemetry derived from app-posted StoreKit events. Use App Store Server API or StoreKit transaction verification as the source of truth for billing enforcement.
 
 Run a check cycle manually:
 

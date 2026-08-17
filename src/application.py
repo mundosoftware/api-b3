@@ -28,9 +28,11 @@ from src.models import (
     FavoriteListOut,
     FavoriteOut,
     IOSDeviceRegistrationRequest,
+    IAPPayingUserListOut,
     IAPTelemetryEventCreateRequest,
     IAPTelemetryEventListOut,
     IAPTelemetryEventOut,
+    IAPTelemetryOutcomeListOut,
     IAPTelemetrySummaryOut,
     NotificationPreferencesOut,
     NotificationPreferencesUpdateRequest,
@@ -374,6 +376,68 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 product_id=product_id,
                 event_type=event_type,
                 status=status_filter,
+                environment=environment,
+            )
+        )
+
+    @app.get("/admin/telemetry/iap-buying-attempts", response_model=IAPTelemetryEventListOut)
+    async def telemetry_iap_buying_attempts(
+        x_admin_token: str | None = Header(default=None),
+        user_id: str | None = Query(default=None),
+        product_id: str | None = Query(default=None),
+        status_filter: str | None = Query(default=None, alias="status"),
+        environment: str | None = Query(default=None),
+        hours: int | None = Query(default=None, ge=1, le=8760),
+        include_restore: bool = Query(default=True),
+        limit: int = Query(default=100, ge=1, le=500),
+    ) -> IAPTelemetryEventListOut:
+        require_admin(x_admin_token)
+        return IAPTelemetryEventListOut(
+            result=repository.list_iap_buying_attempts(
+                limit=limit,
+                user_id=user_id,
+                product_id=product_id,
+                status=status_filter,
+                environment=environment,
+                hours=hours,
+                include_restore=include_restore,
+            )
+        )
+
+    @app.get("/admin/telemetry/iap-paying-users", response_model=IAPPayingUserListOut)
+    async def telemetry_iap_paying_users(
+        x_admin_token: str | None = Header(default=None),
+        user_id: str | None = Query(default=None),
+        product_id: str | None = Query(default=None),
+        environment: str | None = Query(default=None),
+        limit: int = Query(default=100, ge=1, le=500),
+    ) -> IAPPayingUserListOut:
+        require_admin(x_admin_token)
+        return IAPPayingUserListOut(
+            result=repository.list_iap_paying_users(
+                limit=limit,
+                user_id=user_id,
+                product_id=product_id,
+                environment=environment,
+            )
+        )
+
+    @app.get("/admin/telemetry/iap-outcomes", response_model=IAPTelemetryOutcomeListOut)
+    async def telemetry_iap_outcomes(
+        x_admin_token: str | None = Header(default=None),
+        outcome: Literal["all", "success", "failure"] = Query(default="all"),
+        user_id: str | None = Query(default=None),
+        product_id: str | None = Query(default=None),
+        environment: str | None = Query(default=None),
+        hours: int = Query(default=24, ge=1, le=8760),
+    ) -> IAPTelemetryOutcomeListOut:
+        require_admin(x_admin_token)
+        return IAPTelemetryOutcomeListOut(
+            result=repository.list_iap_telemetry_outcomes(
+                outcome=outcome,
+                hours=hours,
+                user_id=user_id,
+                product_id=product_id,
                 environment=environment,
             )
         )

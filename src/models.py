@@ -330,6 +330,47 @@ class IAPTelemetrySummaryOut(BaseModel):
     latest_events: list[IAPTelemetryEventOut]
 
 
+class IAPPayingUserOut(BaseModel):
+    user_id: str
+    product_id: str | None = None
+    product_type: str | None = None
+    transaction_id: str | None = None
+    original_transaction_id: str | None = None
+    offer_id: str | None = None
+    offer_type: str | None = None
+    storefront: str | None = None
+    currency_code: str | None = None
+    display_price: str | None = None
+    price: float | None = None
+    status: str | None = None
+    event_type: str
+    platform: str | None = None
+    environment: str | None = None
+    app_version: str | None = None
+    first_success_at: str
+    latest_success_at: str
+
+
+class IAPPayingUserListOut(BaseModel):
+    result: list[IAPPayingUserOut]
+
+
+class IAPTelemetryOutcomeOut(BaseModel):
+    outcome: str
+    product_id: str | None = None
+    product_type: str | None = None
+    event_type: str
+    status: str | None = None
+    reason: str | None = None
+    sample_message: str | None = None
+    count: int
+    latest_at: str
+
+
+class IAPTelemetryOutcomeListOut(BaseModel):
+    result: list[IAPTelemetryOutcomeOut]
+
+
 class DeviceTelemetryOut(BaseModel):
     id: int
     user_id: str

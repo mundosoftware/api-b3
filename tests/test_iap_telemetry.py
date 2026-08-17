@@ -116,6 +116,196 @@ class IAPTelemetryTest(unittest.TestCase):
             self.assertEqual(product_counts[("pro_year", "purchase_failed", "failed")], 1)
             self.assertEqual(len(summary["latest_events"]), 2)
 
+    def test_lists_iap_buying_attempts(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            settings = Settings(database_path=f"{tmpdir}/app.db", check_loop_enabled=False)
+            init_db(settings)
+            repository = Repository(settings)
+
+            repository.record_iap_telemetry_event(
+                "user-a",
+                IAPTelemetryEventCreateRequest(
+                    event_type="paywall_view",
+                    environment="sandbox",
+                ),
+            )
+            repository.record_iap_telemetry_event(
+                "user-a",
+                IAPTelemetryEventCreateRequest(
+                    event_type="purchase_started",
+                    product_id="pro_year",
+                    status="started",
+                    environment="sandbox",
+                ),
+            )
+            repository.record_iap_telemetry_event(
+                "user-a",
+                IAPTelemetryEventCreateRequest(
+                    event_type="purchase_failed",
+                    product_id="pro_year",
+                    status="failed",
+                    reason="verification_failed",
+                    environment="sandbox",
+                ),
+            )
+            repository.record_iap_telemetry_event(
+                "user-a",
+                IAPTelemetryEventCreateRequest(
+                    event_type="restore_succeeded",
+                    product_id="lifetime_unlock",
+                    status="verified",
+                    environment="sandbox",
+                ),
+            )
+
+            purchase_attempts = repository.list_iap_buying_attempts(
+                user_id="user-a",
+                environment="sandbox",
+                include_restore=False,
+            )
+            purchase_and_restore_attempts = repository.list_iap_buying_attempts(
+                user_id="user-a",
+                environment="sandbox",
+            )
+
+            self.assertEqual(
+                [event["event_type"] for event in purchase_attempts],
+                ["purchase_failed", "purchase_started"],
+            )
+            self.assertEqual(
+                [event["event_type"] for event in purchase_and_restore_attempts],
+                ["restore_succeeded", "purchase_failed", "purchase_started"],
+            )
+
+    def test_lists_paying_users_from_latest_entitlement_state(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            settings = Settings(database_path=f"{tmpdir}/app.db", check_loop_enabled=False)
+            init_db(settings)
+            repository = Repository(settings)
+
+            repository.record_iap_telemetry_event(
+                "user-a",
+                IAPTelemetryEventCreateRequest(
+                    event_type="purchase_succeeded",
+                    product_id="pro_year",
+                    product_type="auto_renewable_subscription",
+                    transaction_id="2000000000000001",
+                    original_transaction_id="2000000000000001",
+                    status="verified",
+                    environment="sandbox",
+                ),
+            )
+            repository.record_iap_telemetry_event(
+                "user-a",
+                IAPTelemetryEventCreateRequest(
+                    event_type="purchase_failed",
+                    product_id="pro_year",
+                    status="failed",
+                    reason="network_timeout",
+                    environment="sandbox",
+                ),
+            )
+            repository.record_iap_telemetry_event(
+                "user-b",
+                IAPTelemetryEventCreateRequest(
+                    event_type="purchase_succeeded",
+                    product_id="pro_month",
+                    status="verified",
+                    environment="sandbox",
+                ),
+            )
+            repository.record_iap_telemetry_event(
+                "user-b",
+                IAPTelemetryEventCreateRequest(
+                    event_type="entitlement_inactive",
+                    product_id="pro_month",
+                    status="expired",
+                    reason="subscription_expired",
+                    environment="sandbox",
+                ),
+            )
+            repository.record_iap_telemetry_event(
+                "user-c",
+                IAPTelemetryEventCreateRequest(
+                    event_type="restore_succeeded",
+                    product_id="lifetime_unlock",
+                    product_type="non_consumable",
+                    status="entitlement_active",
+                    environment="sandbox",
+                ),
+            )
+
+            paying_users = repository.list_iap_paying_users(environment="sandbox")
+            paying_keys = {(user["user_id"], user["product_id"]) for user in paying_users}
+
+            self.assertEqual(
+                paying_keys,
+                {("user-a", "pro_year"), ("user-c", "lifetime_unlock")},
+            )
+            user_a = next(user for user in paying_users if user["user_id"] == "user-a")
+            self.assertEqual(user_a["event_type"], "purchase_succeeded")
+            self.assertEqual(user_a["transaction_id"], "2000000000000001")
+            self.assertEqual(user_a["first_success_at"], user_a["latest_success_at"])
+
+    def test_groups_iap_success_and_failure_outcomes_by_reason(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            settings = Settings(database_path=f"{tmpdir}/app.db", check_loop_enabled=False)
+            init_db(settings)
+            repository = Repository(settings)
+
+            repository.record_iap_telemetry_event(
+                "user-a",
+                IAPTelemetryEventCreateRequest(
+                    event_type="purchase_succeeded",
+                    product_id="pro_year",
+                    status="verified",
+                    environment="sandbox",
+                ),
+            )
+            repository.record_iap_telemetry_event(
+                "user-a",
+                IAPTelemetryEventCreateRequest(
+                    event_type="purchase_failed",
+                    product_id="pro_year",
+                    status="failed",
+                    reason="verification_failed",
+                    message="Transaction verification failed",
+                    environment="sandbox",
+                ),
+            )
+            repository.record_iap_telemetry_event(
+                "user-b",
+                IAPTelemetryEventCreateRequest(
+                    event_type="product_unavailable",
+                    product_id="pro_year",
+                    status="missing",
+                    reason="storekit_product_not_loaded",
+                    message="Loaded products: lifetime_unlock",
+                    environment="sandbox",
+                ),
+            )
+
+            outcomes = repository.list_iap_telemetry_outcomes(
+                environment="sandbox",
+                hours=24,
+            )
+            outcome_counts = {
+                (item["outcome"], item["event_type"], item["reason"]): item["count"]
+                for item in outcomes
+            }
+
+            self.assertEqual(outcome_counts[("success", "purchase_succeeded", None)], 1)
+            self.assertEqual(
+                outcome_counts[("failure", "purchase_failed", "verification_failed")],
+                1,
+            )
+            self.assertEqual(
+                outcome_counts[
+                    ("failure", "product_unavailable", "storekit_product_not_loaded")
+                ],
+                1,
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

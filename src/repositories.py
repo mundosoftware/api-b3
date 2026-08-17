@@ -58,6 +58,77 @@ def identifier_tail(value: str | None) -> str | None:
     return value[-8:]
 
 
+IAP_BUYING_ATTEMPT_EVENT_TYPES = (
+    "purchase_started",
+    "purchase_pending",
+    "purchase_succeeded",
+    "purchase_failed",
+    "purchase_cancelled",
+)
+IAP_RESTORE_ATTEMPT_EVENT_TYPES = (
+    "restore_started",
+    "restore_succeeded",
+    "restore_failed",
+)
+IAP_SUCCESS_EVENT_TYPES = (
+    "purchase_succeeded",
+    "restore_succeeded",
+    "entitlement_active",
+    "subscription_started",
+    "subscription_renewed",
+    "transaction_verified",
+)
+IAP_SUCCESS_STATUSES = (
+    "verified",
+    "active",
+    "entitlement_active",
+    "subscribed",
+    "paid",
+    "trial_active",
+    "success",
+    "succeeded",
+)
+IAP_FAILURE_EVENT_TYPES = (
+    "product_unavailable",
+    "purchase_failed",
+    "purchase_cancelled",
+    "restore_failed",
+    "transaction_unverified",
+    "entitlement_inactive",
+    "subscription_expired",
+    "subscription_cancelled",
+    "subscription_revoked",
+    "purchase_refunded",
+    "refund_succeeded",
+)
+IAP_FAILURE_STATUSES = (
+    "missing",
+    "failed",
+    "cancelled",
+    "unverified",
+    "inactive",
+    "expired",
+    "revoked",
+    "refunded",
+)
+IAP_INACTIVE_EVENT_TYPES = (
+    "entitlement_inactive",
+    "subscription_expired",
+    "subscription_cancelled",
+    "subscription_revoked",
+    "purchase_refunded",
+    "refund_succeeded",
+)
+IAP_INACTIVE_STATUSES = (
+    "inactive",
+    "expired",
+    "cancelled",
+    "revoked",
+    "refunded",
+    "unverified",
+)
+
+
 class Repository:
     def __init__(self, settings: Settings | None = None):
         self.settings = settings or get_settings()
@@ -1033,6 +1104,206 @@ class Repository:
             ),
         }
 
+    def list_iap_buying_attempts(
+        self,
+        limit: int = 100,
+        user_id: str | None = None,
+        product_id: str | None = None,
+        status: str | None = None,
+        environment: str | None = None,
+        hours: int | None = None,
+        include_restore: bool = True,
+    ) -> list[dict[str, Any]]:
+        limit = max(1, min(limit, 500))
+        event_types = list(IAP_BUYING_ATTEMPT_EVENT_TYPES)
+        if include_restore:
+            event_types.extend(IAP_RESTORE_ATTEMPT_EVENT_TYPES)
+
+        conditions = [f"LOWER(event_type) IN ({self._placeholders(event_types)})"]
+        params: list[Any] = event_types.copy()
+        if user_id:
+            conditions.append("user_id = ?")
+            params.append(user_id)
+        if product_id:
+            conditions.append("product_id = ?")
+            params.append(product_id)
+        if status:
+            conditions.append("status = ?")
+            params.append(status)
+        if environment:
+            conditions.append("environment = ?")
+            params.append(environment)
+        since = self._since_for_hours(hours)
+        if since:
+            conditions.append("created_at >= ?")
+            params.append(since)
+
+        with self.database.connect() as db:
+            rows = db.execute(
+                f"""
+                SELECT *
+                FROM iap_telemetry_events
+                WHERE {" AND ".join(conditions)}
+                ORDER BY created_at DESC, id DESC
+                LIMIT ?
+                """,
+                (*params, limit),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    def list_iap_paying_users(
+        self,
+        limit: int = 100,
+        user_id: str | None = None,
+        product_id: str | None = None,
+        environment: str | None = None,
+    ) -> list[dict[str, Any]]:
+        limit = max(1, min(limit, 500))
+        state_case, state_params = self._iap_state_case()
+        success_predicate, success_params = self._iap_success_predicate("first")
+
+        base_conditions = ["product_id IS NOT NULL", "product_id != ''"]
+        base_params: list[Any] = []
+        if user_id:
+            base_conditions.append("user_id = ?")
+            base_params.append(user_id)
+        if product_id:
+            base_conditions.append("product_id = ?")
+            base_params.append(product_id)
+        if environment:
+            base_conditions.append("environment = ?")
+            base_params.append(environment)
+
+        first_success_filters = ""
+        first_success_params: list[Any] = []
+        if environment:
+            first_success_filters = " AND first.environment = ?"
+            first_success_params.append(environment)
+
+        with self.database.connect() as db:
+            rows = db.execute(
+                f"""
+                WITH state_events AS (
+                    SELECT
+                        *,
+                        {state_case} AS entitlement_state
+                    FROM iap_telemetry_events
+                    WHERE {" AND ".join(base_conditions)}
+                ),
+                latest_state AS (
+                    SELECT
+                        *,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY user_id, COALESCE(product_id, '')
+                            ORDER BY created_at DESC, id DESC
+                        ) AS row_num
+                    FROM state_events
+                    WHERE entitlement_state IN ('active', 'inactive')
+                )
+                SELECT
+                    latest.user_id,
+                    latest.product_id,
+                    latest.product_type,
+                    latest.transaction_id,
+                    latest.original_transaction_id,
+                    latest.offer_id,
+                    latest.offer_type,
+                    latest.storefront,
+                    latest.currency_code,
+                    latest.display_price,
+                    latest.price,
+                    latest.status,
+                    latest.event_type,
+                    latest.platform,
+                    latest.environment,
+                    latest.app_version,
+                    COALESCE(
+                        (
+                            SELECT MIN(first.created_at)
+                            FROM iap_telemetry_events first
+                            WHERE first.user_id = latest.user_id
+                                AND COALESCE(first.product_id, '') = COALESCE(latest.product_id, '')
+                                AND {success_predicate}
+                                {first_success_filters}
+                        ),
+                        latest.created_at
+                    ) AS first_success_at,
+                    latest.created_at AS latest_success_at
+                FROM latest_state latest
+                WHERE latest.row_num = 1
+                    AND latest.entitlement_state = 'active'
+                ORDER BY latest.created_at DESC, latest.id DESC
+                LIMIT ?
+                """,
+                (
+                    *state_params,
+                    *base_params,
+                    *success_params,
+                    *first_success_params,
+                    limit,
+                ),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    def list_iap_telemetry_outcomes(
+        self,
+        outcome: str = "all",
+        hours: int = 24,
+        user_id: str | None = None,
+        product_id: str | None = None,
+        environment: str | None = None,
+    ) -> list[dict[str, Any]]:
+        outcome = outcome if outcome in {"all", "success", "failure"} else "all"
+        since = self._since_for_hours(hours)
+        outcome_case, outcome_params = self._iap_outcome_case()
+
+        conditions: list[str] = []
+        params: list[Any] = []
+        if outcome == "all":
+            conditions.append("outcome IN ('success', 'failure')")
+        else:
+            conditions.append("outcome = ?")
+            params.append(outcome)
+        if user_id:
+            conditions.append("user_id = ?")
+            params.append(user_id)
+        if product_id:
+            conditions.append("product_id = ?")
+            params.append(product_id)
+        if environment:
+            conditions.append("environment = ?")
+            params.append(environment)
+        if since:
+            conditions.append("created_at >= ?")
+            params.append(since)
+
+        with self.database.connect() as db:
+            rows = db.execute(
+                f"""
+                SELECT
+                    outcome,
+                    product_id,
+                    product_type,
+                    event_type,
+                    status,
+                    reason,
+                    MAX(message) AS sample_message,
+                    COUNT(*) AS count,
+                    MAX(created_at) AS latest_at
+                FROM (
+                    SELECT
+                        *,
+                        {outcome_case} AS outcome
+                    FROM iap_telemetry_events
+                )
+                WHERE {" AND ".join(conditions)}
+                GROUP BY outcome, product_id, product_type, event_type, status, reason
+                ORDER BY latest_at DESC, count DESC, product_id, event_type, status, reason
+                """,
+                (*outcome_params, *params),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
     def list_device_telemetry(
         self,
         limit: int = 100,
@@ -1172,6 +1443,83 @@ class Repository:
             """,
             (user_id, now),
         )
+
+    def _iap_outcome_case(self, alias: str = "") -> tuple[str, list[Any]]:
+        success_predicate, success_params = self._iap_success_predicate(alias)
+        failure_predicate, failure_params = self._iap_failure_predicate(alias)
+        return (
+            f"""
+            CASE
+                WHEN {success_predicate} THEN 'success'
+                WHEN {failure_predicate} THEN 'failure'
+                ELSE 'other'
+            END
+            """,
+            [*success_params, *failure_params],
+        )
+
+    def _iap_state_case(self, alias: str = "") -> tuple[str, list[Any]]:
+        success_predicate, success_params = self._iap_success_predicate(alias)
+        inactive_predicate, inactive_params = self._iap_inactive_predicate(alias)
+        return (
+            f"""
+            CASE
+                WHEN {success_predicate} THEN 'active'
+                WHEN {inactive_predicate} THEN 'inactive'
+                ELSE 'other'
+            END
+            """,
+            [*success_params, *inactive_params],
+        )
+
+    def _iap_success_predicate(self, alias: str = "") -> tuple[str, list[Any]]:
+        return self._iap_event_or_status_predicate(
+            IAP_SUCCESS_EVENT_TYPES,
+            IAP_SUCCESS_STATUSES,
+            alias,
+        )
+
+    def _iap_failure_predicate(self, alias: str = "") -> tuple[str, list[Any]]:
+        return self._iap_event_or_status_predicate(
+            IAP_FAILURE_EVENT_TYPES,
+            IAP_FAILURE_STATUSES,
+            alias,
+        )
+
+    def _iap_inactive_predicate(self, alias: str = "") -> tuple[str, list[Any]]:
+        return self._iap_event_or_status_predicate(
+            IAP_INACTIVE_EVENT_TYPES,
+            IAP_INACTIVE_STATUSES,
+            alias,
+        )
+
+    def _iap_event_or_status_predicate(
+        self,
+        event_types: Sequence[str],
+        statuses: Sequence[str],
+        alias: str = "",
+    ) -> tuple[str, list[Any]]:
+        prefix = f"{alias}." if alias else ""
+        return (
+            f"""
+            (
+                LOWER(COALESCE({prefix}event_type, '')) IN ({self._placeholders(event_types)})
+                OR LOWER(COALESCE({prefix}status, '')) IN ({self._placeholders(statuses)})
+            )
+            """,
+            [*event_types, *statuses],
+        )
+
+    def _since_for_hours(self, hours: int | None) -> str | None:
+        if hours is None:
+            return None
+        clamped_hours = max(1, min(hours, 8760))
+        return (
+            datetime.now(UTC).replace(microsecond=0) - timedelta(hours=clamped_hours)
+        ).isoformat()
+
+    def _placeholders(self, values: Sequence[object]) -> str:
+        return ",".join("?" for _ in values)
 
     def _iap_telemetry_filters(
         self,

@@ -80,6 +80,7 @@
           <li>Identificadores do Apple Watch ou do dispositivo companion usados pelo backend para enviar alertas</li>
           <li>Tickers acompanhados, favoritos e configurações de regras de alerta escolhidos pelo usuário</li>
           <li>Fuso horário e idioma opcionais quando necessários para alertas agendados</li>
+          <li>Eventos técnicos de compras e assinaturas, como visualização da tela de assinatura, produtos carregados, produto indisponível, compra iniciada, compra concluída, falha de compra, restauração e status de direito de acesso</li>
         </ul>
         <p>O app usa Apple StoreKit para verificar se você tem uma assinatura ativa, teste grátis ou acesso vitalício. O Trade Alert não coleta dados de cartão de pagamento.</p>
       </section>
@@ -93,12 +94,20 @@
           <li>armazenar tickers acompanhados, favoritos e preferências de alerta</li>
           <li>buscar e exibir cotações da B3 a partir do backend</li>
           <li>validar o status de compra e restaurar acesso adquirido pela App Store</li>
+          <li>diagnosticar falhas de carregamento de produtos, teste grátis, oferta promocional, compra, assinatura e restauração</li>
         </ul>
       </section>
 
       <section>
         <h2>Compras, Assinaturas e Testes</h2>
         <p>O Trade Alert pode oferecer assinaturas renováveis automaticamente, teste introdutório grátis quando disponível e uma compra não consumível de acesso vitalício. As compras são processadas pela Apple por meio da App Store.</p>
+        <p>Os preços de referência no Brasil são:</p>
+        <ul>
+          <li>Pro Anual (<code>pro_year</code>): 7 dias de teste grátis quando elegível. Após o teste, a primeira cobrança anual pode usar a oferta promocional de R$ 24,90 para o primeiro ano. Depois disso, a assinatura renova automaticamente pelo preço cheio de R$ 34,90 por ano a partir do segundo ano e nos anos seguintes, até cancelamento.</li>
+          <li>Pro Mensal (<code>pro_month</code>): R$ 4,90 por mês, com renovação automática mensal até cancelamento.</li>
+          <li>Acesso Vitalício (<code>lifetime_unlock</code>): R$ 49,90 em compra única não consumível.</li>
+        </ul>
+        <p>Em outros países ou regiões, a App Store pode exibir preços convertidos automaticamente pela Apple, incluindo variações por câmbio, tributos e regras locais. O preço final aplicável é sempre o exibido pela App Store antes da confirmação da compra.</p>
         <p>Cobrança de assinatura, renovação, cancelamento, reembolso e gerenciamento do método de pagamento são tratados pela Apple. Você pode gerenciar ou cancelar assinaturas nos ajustes de assinatura da sua Conta Apple.</p>
         <p>Se você iniciar um teste grátis, a Apple poderá convertê-lo em assinatura paga ao fim do período de teste, a menos que você cancele pela sua Conta Apple antes da data de renovação indicada pela Apple.</p>
         <p>O acesso vitalício é uma compra única dentro do app que libera o acesso para a Conta Apple que realizou a compra, sujeita ao comportamento de restauração da App Store.</p>
@@ -155,6 +164,7 @@
           <li>Watch or companion device identifiers used by the backend to send alerts</li>
           <li>User-selected tracked tickers, favorites, and alert rule settings</li>
           <li>Optional timezone and locale details necessary for scheduled alerts</li>
+          <li>Technical purchase and subscription events, such as paywall views, loaded products, unavailable products, purchase started, purchase completed, purchase failed, restore, and entitlement status</li>
         </ul>
         <p>The app uses Apple StoreKit to check whether you have an active subscription, free trial, or lifetime unlock. Trade Alert does not collect payment card details.</p>
       </section>
@@ -168,12 +178,20 @@
           <li>storing tracked tickers, favorites, and alert preferences</li>
           <li>fetching and displaying B3 quote data from the backend</li>
           <li>validating purchase status and restoring access purchased through the App Store</li>
+          <li>diagnosing product loading, free trial, promotional offer, purchase, subscription, and restore failures</li>
         </ul>
       </section>
 
       <section>
         <h2>Purchases, Subscriptions and Trials</h2>
         <p>Trade Alert may offer auto-renewable subscriptions, a free introductory trial when available, and a non-consumable lifetime unlock. Purchases are processed by Apple through the App Store.</p>
+        <p>Brazil reference prices are:</p>
+        <ul>
+          <li>Pro Yearly (<code>pro_year</code>): 7-day free trial when eligible. After the trial, the first yearly billing period may use the promotional offer price of R$ 24.90 for the first year. After that, the subscription renews automatically at the full price of R$ 34.90 per year from the second year onward until cancelled.</li>
+          <li>Pro Monthly (<code>pro_month</code>): R$ 4.90 per month, automatically renewing monthly until cancelled.</li>
+          <li>Lifetime Unlock (<code>lifetime_unlock</code>): R$ 49.90 as a one-time non-consumable purchase.</li>
+        </ul>
+        <p>In other countries or regions, the App Store may show prices automatically converted by Apple, including variations for currency exchange, taxes, and local rules. The final applicable price is always the price shown by the App Store before purchase confirmation.</p>
         <p>Subscription billing, renewal, cancellation, refunds, and payment method management are handled by Apple. You can manage or cancel subscriptions in your Apple ID subscription settings.</p>
         <p>If you start a free trial, Apple may convert it into a paid subscription at the end of the trial unless you cancel through your Apple ID settings before the renewal date shown by Apple.</p>
         <p>The lifetime unlock is a one-time in-app purchase that unlocks access for the Apple ID that purchased it, subject to App Store restore behavior.</p>
