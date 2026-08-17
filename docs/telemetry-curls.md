@@ -2,6 +2,8 @@
 
 These examples are Postman-importable. Copy one `curl` command at a time.
 
+Postman collection: [`telemetry-postman-collection.json`](telemetry-postman-collection.json).
+
 Replace these placeholders:
 
 - `{{API_BASE}}`: replace this documentation IP with your deployed API URL.

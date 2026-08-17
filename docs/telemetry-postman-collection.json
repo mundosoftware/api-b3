@@ -1,0 +1,1161 @@
+{
+  "info": {
+    "name": "Trade Alert Telemetry API",
+    "description": "Generated from docs/telemetry-curls.md. Set collection variables before running requests.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "IAP and Subscription Telemetry",
+      "item": [
+        {
+          "name": "Record a paywall view from the app",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{API_BASE}}/users/{{USER_ID}}/iap/telemetry",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "users",
+                "{{USER_ID}}",
+                "iap",
+                "telemetry"
+              ]
+            },
+            "description": "Generated from docs/telemetry-curls.md: Record a paywall view from the app.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"event_type\": \"paywall_view\",\n    \"platform\": \"ios\",\n    \"environment\": \"production\",\n    \"app_version\": \"1.2.0\",\n    \"device_model\": \"iPhone\",\n    \"device_os\": \"iOS 18.6\",\n    \"language\": \"pt\"\n  }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Record loaded StoreKit products, including the yearly trial and promotional offer",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{API_BASE}}/users/{{USER_ID}}/iap/telemetry",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "users",
+                "{{USER_ID}}",
+                "iap",
+                "telemetry"
+              ]
+            },
+            "description": "Generated from docs/telemetry-curls.md: Record loaded StoreKit products, including the yearly trial and promotional offer.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"event_type\": \"products_loaded\",\n    \"product_id\": \"pro_year\",\n    \"product_type\": \"auto_renewable_subscription\",\n    \"subscription_group_id\": \"22314965\",\n    \"offer_id\": \"start_promo\",\n    \"offer_type\": \"promotional\",\n    \"storefront\": \"BRA\",\n    \"currency_code\": \"BRL\",\n    \"display_price\": \"R$ 24,90\",\n    \"price\": 24.90,\n    \"trial_days\": 7,\n    \"status\": \"available\",\n    \"platform\": \"ios\",\n    \"environment\": \"production\",\n    \"app_version\": \"1.2.0\",\n    \"language\": \"pt\"\n  }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Record a StoreKit product loading failure",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{API_BASE}}/users/{{USER_ID}}/iap/telemetry",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "users",
+                "{{USER_ID}}",
+                "iap",
+                "telemetry"
+              ]
+            },
+            "description": "Generated from docs/telemetry-curls.md: Record a StoreKit product loading failure.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"event_type\": \"product_unavailable\",\n    \"product_id\": \"pro_year\",\n    \"status\": \"missing\",\n    \"reason\": \"storekit_product_not_loaded\",\n    \"message\": \"Could not load Pro Yearly from the App Store. Loaded products: lifetime_unlock, pro_month\",\n    \"platform\": \"ios\",\n    \"environment\": \"sandbox\"\n  }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Record a successful purchase or trial enrollment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{API_BASE}}/users/{{USER_ID}}/iap/telemetry",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "users",
+                "{{USER_ID}}",
+                "iap",
+                "telemetry"
+              ]
+            },
+            "description": "Generated from docs/telemetry-curls.md: Record a successful purchase or trial enrollment.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"event_type\": \"purchase_succeeded\",\n    \"product_id\": \"pro_year\",\n    \"product_type\": \"auto_renewable_subscription\",\n    \"transaction_id\": \"2000000000000001\",\n    \"original_transaction_id\": \"2000000000000001\",\n    \"status\": \"verified\",\n    \"platform\": \"ios\",\n    \"environment\": \"production\"\n  }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Record a restore result",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{API_BASE}}/users/{{USER_ID}}/iap/telemetry",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "users",
+                "{{USER_ID}}",
+                "iap",
+                "telemetry"
+              ]
+            },
+            "description": "Generated from docs/telemetry-curls.md: Record a restore result.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"event_type\": \"restore_succeeded\",\n    \"product_id\": \"lifetime_unlock\",\n    \"product_type\": \"non_consumable\",\n    \"status\": \"entitlement_active\",\n    \"platform\": \"ios\",\n    \"environment\": \"production\"\n  }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List IAP and subscription telemetry",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Admin-Token",
+                "value": "{{ADMIN_TOKEN}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{API_BASE}}/admin/telemetry/iap-events?user_id={{USER_ID}}&product_id={{PRODUCT_ID}}&limit=50",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "admin",
+                "telemetry",
+                "iap-events"
+              ],
+              "query": [
+                {
+                  "key": "user_id",
+                  "value": "{{USER_ID}}"
+                },
+                {
+                  "key": "product_id",
+                  "value": "{{PRODUCT_ID}}"
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            },
+            "description": "Generated from docs/telemetry-curls.md: List IAP and subscription telemetry."
+          },
+          "response": []
+        },
+        {
+          "name": "List unavailable StoreKit product diagnostics",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Admin-Token",
+                "value": "{{ADMIN_TOKEN}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{API_BASE}}/admin/telemetry/iap-events?event_type=product_unavailable&limit=50",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "admin",
+                "telemetry",
+                "iap-events"
+              ],
+              "query": [
+                {
+                  "key": "event_type",
+                  "value": "product_unavailable"
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            },
+            "description": "Generated from docs/telemetry-curls.md: List unavailable StoreKit product diagnostics."
+          },
+          "response": []
+        },
+        {
+          "name": "List buying attempts, including purchase started, pending, succeeded, failed, cancelled and restore attempts",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Admin-Token",
+                "value": "{{ADMIN_TOKEN}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{API_BASE}}/admin/telemetry/iap-buying-attempts?user_id={{USER_ID}}&product_id={{PRODUCT_ID}}&hours=24&limit=50",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "admin",
+                "telemetry",
+                "iap-buying-attempts"
+              ],
+              "query": [
+                {
+                  "key": "user_id",
+                  "value": "{{USER_ID}}"
+                },
+                {
+                  "key": "product_id",
+                  "value": "{{PRODUCT_ID}}"
+                },
+                {
+                  "key": "hours",
+                  "value": "24"
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            },
+            "description": "Generated from docs/telemetry-curls.md: List buying attempts, including purchase started, pending, succeeded, failed, cancelled and restore attempts."
+          },
+          "response": []
+        },
+        {
+          "name": "List only purchase attempts, excluding restore attempts",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Admin-Token",
+                "value": "{{ADMIN_TOKEN}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{API_BASE}}/admin/telemetry/iap-buying-attempts?include_restore=false&hours=24&limit=50",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "admin",
+                "telemetry",
+                "iap-buying-attempts"
+              ],
+              "query": [
+                {
+                  "key": "include_restore",
+                  "value": "false"
+                },
+                {
+                  "key": "hours",
+                  "value": "24"
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            },
+            "description": "Generated from docs/telemetry-curls.md: List only purchase attempts, excluding restore attempts."
+          },
+          "response": []
+        },
+        {
+          "name": "List subscribed or paying users derived from the latest active entitlement telemetry",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Admin-Token",
+                "value": "{{ADMIN_TOKEN}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{API_BASE}}/admin/telemetry/iap-paying-users?environment=production&limit=50",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "admin",
+                "telemetry",
+                "iap-paying-users"
+              ],
+              "query": [
+                {
+                  "key": "environment",
+                  "value": "production"
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            },
+            "description": "Generated from docs/telemetry-curls.md: List subscribed or paying users derived from the latest active entitlement telemetry."
+          },
+          "response": []
+        },
+        {
+          "name": "List subscribed or paying users for one StoreKit product",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Admin-Token",
+                "value": "{{ADMIN_TOKEN}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{API_BASE}}/admin/telemetry/iap-paying-users?product_id={{PRODUCT_ID}}&environment=production&limit=50",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "admin",
+                "telemetry",
+                "iap-paying-users"
+              ],
+              "query": [
+                {
+                  "key": "product_id",
+                  "value": "{{PRODUCT_ID}}"
+                },
+                {
+                  "key": "environment",
+                  "value": "production"
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            },
+            "description": "Generated from docs/telemetry-curls.md: List subscribed or paying users for one StoreKit product."
+          },
+          "response": []
+        },
+        {
+          "name": "List subscription and IAP success/failure outcomes grouped by product, status and reason",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Admin-Token",
+                "value": "{{ADMIN_TOKEN}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{API_BASE}}/admin/telemetry/iap-outcomes?outcome=all&hours=24",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "admin",
+                "telemetry",
+                "iap-outcomes"
+              ],
+              "query": [
+                {
+                  "key": "outcome",
+                  "value": "all"
+                },
+                {
+                  "key": "hours",
+                  "value": "24"
+                }
+              ]
+            },
+            "description": "Generated from docs/telemetry-curls.md: List subscription and IAP success/failure outcomes grouped by product, status and reason."
+          },
+          "response": []
+        },
+        {
+          "name": "List subscription and IAP failures with reason counts",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Admin-Token",
+                "value": "{{ADMIN_TOKEN}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{API_BASE}}/admin/telemetry/iap-outcomes?outcome=failure&product_id={{PRODUCT_ID}}&hours=24",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "admin",
+                "telemetry",
+                "iap-outcomes"
+              ],
+              "query": [
+                {
+                  "key": "outcome",
+                  "value": "failure"
+                },
+                {
+                  "key": "product_id",
+                  "value": "{{PRODUCT_ID}}"
+                },
+                {
+                  "key": "hours",
+                  "value": "24"
+                }
+              ]
+            },
+            "description": "Generated from docs/telemetry-curls.md: List subscription and IAP failures with reason counts."
+          },
+          "response": []
+        },
+        {
+          "name": "List subscription and IAP successes",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Admin-Token",
+                "value": "{{ADMIN_TOKEN}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{API_BASE}}/admin/telemetry/iap-outcomes?outcome=success&hours=24",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "admin",
+                "telemetry",
+                "iap-outcomes"
+              ],
+              "query": [
+                {
+                  "key": "outcome",
+                  "value": "success"
+                },
+                {
+                  "key": "hours",
+                  "value": "24"
+                }
+              ]
+            },
+            "description": "Generated from docs/telemetry-curls.md: List subscription and IAP successes."
+          },
+          "response": []
+        },
+        {
+          "name": "Summarize recent IAP and subscription telemetry",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Admin-Token",
+                "value": "{{ADMIN_TOKEN}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{API_BASE}}/admin/telemetry/iap-summary?user_id={{USER_ID}}&hours=24",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "admin",
+                "telemetry",
+                "iap-summary"
+              ],
+              "query": [
+                {
+                  "key": "user_id",
+                  "value": "{{USER_ID}}"
+                },
+                {
+                  "key": "hours",
+                  "value": "24"
+                }
+              ]
+            },
+            "description": "Generated from docs/telemetry-curls.md: Summarize recent IAP and subscription telemetry."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Admin Alert Telemetry",
+      "item": [
+        {
+          "name": "Run a check cycle manually",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Admin-Token",
+                "value": "{{ADMIN_TOKEN}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{API_BASE}}/admin/run-checks",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "admin",
+                "run-checks"
+              ]
+            },
+            "description": "Generated from docs/telemetry-curls.md: Run a check cycle manually."
+          },
+          "response": []
+        },
+        {
+          "name": "List live alert due/skipped status, including server UTC time and rule-local time",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Admin-Token",
+                "value": "{{ADMIN_TOKEN}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{API_BASE}}/admin/telemetry/alert-status?user_id={{USER_ID}}&ticker={{TICKER}}&enabled=true&limit=50",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "admin",
+                "telemetry",
+                "alert-status"
+              ],
+              "query": [
+                {
+                  "key": "user_id",
+                  "value": "{{USER_ID}}"
+                },
+                {
+                  "key": "ticker",
+                  "value": "{{TICKER}}"
+                },
+                {
+                  "key": "enabled",
+                  "value": "true"
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            },
+            "description": "Generated from docs/telemetry-curls.md: List live alert due/skipped status, including server UTC time and rule-local time."
+          },
+          "response": []
+        },
+        {
+          "name": "Check a specific moment. This example is 10:00 BRT, which is 13:00 UTC",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Admin-Token",
+                "value": "{{ADMIN_TOKEN}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{API_BASE}}/admin/telemetry/alert-status?user_id={{USER_ID}}&ticker={{TICKER}}&now=2026-08-12T13:00:00Z",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "admin",
+                "telemetry",
+                "alert-status"
+              ],
+              "query": [
+                {
+                  "key": "user_id",
+                  "value": "{{USER_ID}}"
+                },
+                {
+                  "key": "ticker",
+                  "value": "{{TICKER}}"
+                },
+                {
+                  "key": "now",
+                  "value": "2026-08-12T13:00:00Z"
+                }
+              ]
+            },
+            "description": "Generated from docs/telemetry-curls.md: Check a specific moment. This example is 10:00 BRT, which is 13:00 UTC."
+          },
+          "response": []
+        },
+        {
+          "name": "List alert scheduler runs",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Admin-Token",
+                "value": "{{ADMIN_TOKEN}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{API_BASE}}/admin/telemetry/alert-runs?limit=50",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "admin",
+                "telemetry",
+                "alert-runs"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            },
+            "description": "Generated from docs/telemetry-curls.md: List alert scheduler runs."
+          },
+          "response": []
+        },
+        {
+          "name": "List failed scheduler runs only",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Admin-Token",
+                "value": "{{ADMIN_TOKEN}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{API_BASE}}/admin/telemetry/alert-runs?status=error&limit=50",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "admin",
+                "telemetry",
+                "alert-runs"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "error"
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            },
+            "description": "Generated from docs/telemetry-curls.md: List failed scheduler runs only."
+          },
+          "response": []
+        },
+        {
+          "name": "List alert event logs",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Admin-Token",
+                "value": "{{ADMIN_TOKEN}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{API_BASE}}/admin/telemetry/alert-events?user_id={{USER_ID}}&ticker={{TICKER}}&limit=50",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "admin",
+                "telemetry",
+                "alert-events"
+              ],
+              "query": [
+                {
+                  "key": "user_id",
+                  "value": "{{USER_ID}}"
+                },
+                {
+                  "key": "ticker",
+                  "value": "{{TICKER}}"
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            },
+            "description": "Generated from docs/telemetry-curls.md: List alert event logs."
+          },
+          "response": []
+        },
+        {
+          "name": "List alert failures only",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Admin-Token",
+                "value": "{{ADMIN_TOKEN}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{API_BASE}}/admin/telemetry/alert-events?event_type=failure&limit=50",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "admin",
+                "telemetry",
+                "alert-events"
+              ],
+              "query": [
+                {
+                  "key": "event_type",
+                  "value": "failure"
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            },
+            "description": "Generated from docs/telemetry-curls.md: List alert failures only."
+          },
+          "response": []
+        },
+        {
+          "name": "List quote lookup failures",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Admin-Token",
+                "value": "{{ADMIN_TOKEN}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{API_BASE}}/admin/telemetry/alert-events?event_type=failure&reason=quote_lookup_failed&limit=50",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "admin",
+                "telemetry",
+                "alert-events"
+              ],
+              "query": [
+                {
+                  "key": "event_type",
+                  "value": "failure"
+                },
+                {
+                  "key": "reason",
+                  "value": "quote_lookup_failed"
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            },
+            "description": "Generated from docs/telemetry-curls.md: List quote lookup failures."
+          },
+          "response": []
+        },
+        {
+          "name": "List combined failures and reasons from alert events plus notification logs",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Admin-Token",
+                "value": "{{ADMIN_TOKEN}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{API_BASE}}/admin/telemetry/failures?user_id={{USER_ID}}&ticker={{TICKER}}&limit=50",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "admin",
+                "telemetry",
+                "failures"
+              ],
+              "query": [
+                {
+                  "key": "user_id",
+                  "value": "{{USER_ID}}"
+                },
+                {
+                  "key": "ticker",
+                  "value": "{{TICKER}}"
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            },
+            "description": "Generated from docs/telemetry-curls.md: List combined failures and reasons from alert events plus notification logs."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Notifications and Devices",
+      "item": [
+        {
+          "name": "List notification logs",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Admin-Token",
+                "value": "{{ADMIN_TOKEN}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{API_BASE}}/admin/telemetry/notifications?user_id={{USER_ID}}&ticker={{TICKER}}&limit=50",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "admin",
+                "telemetry",
+                "notifications"
+              ],
+              "query": [
+                {
+                  "key": "user_id",
+                  "value": "{{USER_ID}}"
+                },
+                {
+                  "key": "ticker",
+                  "value": "{{TICKER}}"
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            },
+            "description": "Generated from docs/telemetry-curls.md: List notification logs."
+          },
+          "response": []
+        },
+        {
+          "name": "List notification failures only",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Admin-Token",
+                "value": "{{ADMIN_TOKEN}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{API_BASE}}/admin/telemetry/notifications?failures_only=true&limit=50",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "admin",
+                "telemetry",
+                "notifications"
+              ],
+              "query": [
+                {
+                  "key": "failures_only",
+                  "value": "true"
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            },
+            "description": "Generated from docs/telemetry-curls.md: List notification failures only."
+          },
+          "response": []
+        },
+        {
+          "name": "List registered devices with token IDs masked",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Admin-Token",
+                "value": "{{ADMIN_TOKEN}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{API_BASE}}/admin/telemetry/devices?user_id={{USER_ID}}&limit=50",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "admin",
+                "telemetry",
+                "devices"
+              ],
+              "query": [
+                {
+                  "key": "user_id",
+                  "value": "{{USER_ID}}"
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            },
+            "description": "Generated from docs/telemetry-curls.md: List registered devices with token IDs masked."
+          },
+          "response": []
+        },
+        {
+          "name": "List only watchOS devices",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Admin-Token",
+                "value": "{{ADMIN_TOKEN}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{API_BASE}}/admin/telemetry/devices?user_id={{USER_ID}}&platform=watchos&limit=50",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "admin",
+                "telemetry",
+                "devices"
+              ],
+              "query": [
+                {
+                  "key": "user_id",
+                  "value": "{{USER_ID}}"
+                },
+                {
+                  "key": "platform",
+                  "value": "watchos"
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            },
+            "description": "Generated from docs/telemetry-curls.md: List only watchOS devices."
+          },
+          "response": []
+        },
+        {
+          "name": "User devices",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Admin-Token",
+                "value": "{{ADMIN_TOKEN}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{API_BASE}}/admin/telemetry/devices?user_id={{USER_ID}}&limit=50",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "admin",
+                "telemetry",
+                "devices"
+              ],
+              "query": [
+                {
+                  "key": "user_id",
+                  "value": "{{USER_ID}}"
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            },
+            "description": "Generated from docs/telemetry-curls.md: User devices."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "User Preferences",
+      "item": [
+        {
+          "name": "User preferences",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{API_BASE}}/users/{{USER_ID}}/notification-preferences",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "users",
+                "{{USER_ID}}",
+                "notification-preferences"
+              ]
+            },
+            "description": "Generated from docs/telemetry-curls.md: User preferences."
+          },
+          "response": []
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "API_BASE",
+      "value": "https://203.0.113.10",
+      "type": "string"
+    },
+    {
+      "key": "ADMIN_TOKEN",
+      "value": "",
+      "type": "secret"
+    },
+    {
+      "key": "USER_ID",
+      "value": "user-a",
+      "type": "string"
+    },
+    {
+      "key": "TICKER",
+      "value": "PETR4",
+      "type": "string"
+    },
+    {
+      "key": "PRODUCT_ID",
+      "value": "pro_year",
+      "type": "string"
+    }
+  ]
+}

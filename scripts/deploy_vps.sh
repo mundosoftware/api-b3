@@ -6,6 +6,8 @@ MODE="vps"
 NO_START="false"
 SKIP_INSTALL="false"
 ENV_FILE=""
+CLEANUP_FILES=()
+SSH_AGENT_STARTED="false"
 
 usage() {
   cat <<EOF
@@ -22,8 +24,29 @@ Options:
   --no-start       Local mode only: install/init but do not start Uvicorn.
   --skip-install   Local mode only: skip pip install, useful when venv is ready.
   -h, --help       Show this help.
+
+SSH keychain env:
+  SSH_KEY_PATH                  Private key used for VPS SSH.
+  SSH_KEYCHAIN_ENABLED=auto     auto, true, or false. On macOS, preload SSH_KEY_PATH
+                                from Apple Keychain when possible.
+  SSH_KEYCHAIN_SERVICE          Optional Keychain service name. Defaults include
+                                "SSH: <expanded SSH_KEY_PATH>".
+  SSH_KEYCHAIN_ACCOUNT          Optional Keychain account name.
+  SSH_KEYCHAIN_REQUIRED=false   Set true to fail instead of falling back to an
+                                interactive SSH passphrase prompt.
 EOF
 }
+
+cleanup() {
+  if [[ ${#CLEANUP_FILES[@]} -gt 0 ]]; then
+    rm -f "${CLEANUP_FILES[@]}"
+  fi
+  if [[ "${SSH_AGENT_STARTED}" == "true" && -n "${SSH_AGENT_PID:-}" ]]; then
+    ssh-agent -k >/dev/null 2>&1 || true
+  fi
+}
+
+trap cleanup EXIT
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -109,6 +132,8 @@ LOCAL_SERVER_PORT="${LOCAL_SERVER_PORT:-${SERVER_PORT}}"
 LOCAL_DATABASE_PATH="${LOCAL_DATABASE_PATH:-database/local-dev.db}"
 LOCAL_CHECK_LOOP_ENABLED="${LOCAL_CHECK_LOOP_ENABLED:-false}"
 LOCAL_ONESIGNAL_ENABLED="${LOCAL_ONESIGNAL_ENABLED:-false}"
+SSH_KEYCHAIN_ENABLED="${SSH_KEYCHAIN_ENABLED:-auto}"
+SSH_KEYCHAIN_REQUIRED="${SSH_KEYCHAIN_REQUIRED:-false}"
 
 quote_env_value() {
   local value="${1:-}"
@@ -137,6 +162,200 @@ reverse_proxy_enabled() {
   https_enabled || [[ "${ENABLE_REVERSE_PROXY}" == "true" ]] || {
     [[ "${ENABLE_REVERSE_PROXY}" == "auto" && "${PUBLIC_SERVER_PORT}" != "${SERVER_PORT}" ]]
   }
+}
+
+command_exists() {
+  command -v "$1" >/dev/null 2>&1
+}
+
+disabled() {
+  [[ "$1" == "false" || "$1" == "0" || "$1" == "no" || "$1" == "off" ]]
+}
+
+is_macos() {
+  [[ "$(uname -s)" == "Darwin" ]]
+}
+
+expand_path() {
+  local path="$1"
+  printf '%s' "${path/#\~/${HOME}}"
+}
+
+shell_quote() {
+  printf '%q' "$1"
+}
+
+ensure_ssh_agent() {
+  local status=0
+  if [[ -n "${SSH_AUTH_SOCK:-}" ]]; then
+    ssh-add -l >/dev/null 2>&1 || status=$?
+    if [[ "${status}" != "2" ]]; then
+      return 0
+    fi
+  fi
+
+  if ! command_exists ssh-agent; then
+    return 1
+  fi
+
+  eval "$(ssh-agent -s)" >/dev/null
+  SSH_AGENT_STARTED="true"
+}
+
+ssh_agent_has_key() {
+  local key_path="$1"
+  local public_key_path="${key_path}.pub"
+
+  if [[ -f "${public_key_path}" ]] && ssh-add -T "${public_key_path}" >/dev/null 2>&1; then
+    return 0
+  fi
+
+  ssh-add -l 2>/dev/null | grep -F -- "${key_path}" >/dev/null
+}
+
+try_ssh_add_no_prompt() {
+  local key_path="$1"
+  SSH_ASKPASS="${SSH_ASKPASS:-/usr/bin/false}" \
+    SSH_ASKPASS_REQUIRE=force \
+    DISPLAY="${DISPLAY:-none}" \
+    ssh-add "$key_path" </dev/null >/dev/null 2>&1
+}
+
+try_ssh_add_from_apple_keychain() {
+  local key_path="$1"
+  if ! is_macos || disabled "${SSH_KEYCHAIN_ENABLED}" || ! command_exists ssh-add; then
+    return 1
+  fi
+
+  SSH_ASKPASS="${SSH_ASKPASS:-/usr/bin/false}" \
+    SSH_ASKPASS_REQUIRE=force \
+    DISPLAY="${DISPLAY:-none}" \
+    ssh-add --apple-load-keychain "$key_path" </dev/null >/dev/null 2>&1 || true
+  if ssh_agent_has_key "$key_path"; then
+    return 0
+  fi
+
+  SSH_ASKPASS="${SSH_ASKPASS:-/usr/bin/false}" \
+    SSH_ASKPASS_REQUIRE=force \
+    DISPLAY="${DISPLAY:-none}" \
+    ssh-add --apple-use-keychain "$key_path" </dev/null >/dev/null 2>&1 || true
+  ssh_agent_has_key "$key_path"
+}
+
+keychain_password_for_ssh_key() {
+  local key_path="$1"
+  local service
+  local account
+  local password
+  local services=()
+  local accounts=()
+
+  if ! is_macos || disabled "${SSH_KEYCHAIN_ENABLED}" || ! command_exists security; then
+    return 1
+  fi
+
+  if [[ -n "${SSH_KEYCHAIN_SERVICE:-}" ]]; then
+    services+=("${SSH_KEYCHAIN_SERVICE}")
+  else
+    services+=("SSH: ${key_path}" "${key_path}" "$(basename "${key_path}")")
+  fi
+
+  if [[ -n "${SSH_KEYCHAIN_ACCOUNT:-}" ]]; then
+    accounts+=("${SSH_KEYCHAIN_ACCOUNT}")
+  else
+    if [[ -n "${USER:-}" ]]; then
+      accounts+=("${USER}")
+    fi
+    accounts+=("")
+  fi
+
+  for service in "${services[@]}"; do
+    for account in "${accounts[@]}"; do
+      if [[ -n "${account}" ]]; then
+        if password="$(security find-generic-password -w -s "${service}" -a "${account}" 2>/dev/null)"; then
+          printf '%s' "${password}"
+          return 0
+        fi
+      else
+        if password="$(security find-generic-password -w -s "${service}" 2>/dev/null)"; then
+          printf '%s' "${password}"
+          return 0
+        fi
+      fi
+    done
+  done
+
+  return 1
+}
+
+try_ssh_add_with_keychain_password() {
+  local key_path="$1"
+  local passphrase
+  local askpass
+
+  if ! passphrase="$(keychain_password_for_ssh_key "${key_path}")"; then
+    return 1
+  fi
+
+  askpass="$(mktemp)"
+  CLEANUP_FILES+=("${askpass}")
+  chmod 700 "${askpass}"
+  cat > "${askpass}" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "${SSH_KEY_PASSPHRASE}"
+EOF
+
+  SSH_KEY_PASSPHRASE="${passphrase}" \
+    SSH_ASKPASS="${askpass}" \
+    SSH_ASKPASS_REQUIRE=force \
+    DISPLAY="${DISPLAY:-none}" \
+    ssh-add "${key_path}" </dev/null >/dev/null 2>&1
+}
+
+prepare_ssh_key() {
+  local key_path="$1"
+
+  if [[ ! -f "${key_path}" ]]; then
+    echo "SSH key not found: ${key_path}" >&2
+    exit 1
+  fi
+
+  if disabled "${SSH_KEYCHAIN_ENABLED}"; then
+    return 0
+  fi
+
+  if ! ensure_ssh_agent; then
+    echo "Could not start or connect to ssh-agent; SSH may prompt for the key passphrase." >&2
+    return 0
+  fi
+
+  if ssh_agent_has_key "${key_path}"; then
+    echo "SSH key already loaded in ssh-agent"
+    return 0
+  fi
+
+  if try_ssh_add_no_prompt "${key_path}"; then
+    echo "Loaded SSH key into ssh-agent"
+    return 0
+  fi
+
+  if try_ssh_add_from_apple_keychain "${key_path}"; then
+    echo "Loaded SSH key from Apple Keychain"
+    return 0
+  fi
+
+  if try_ssh_add_with_keychain_password "${key_path}"; then
+    echo "Loaded SSH key using Apple Keychain credential"
+    return 0
+  fi
+
+  if truthy "${SSH_KEYCHAIN_REQUIRED}"; then
+    echo "Could not load SSH key passphrase from Apple Keychain for ${key_path}." >&2
+    echo "Set SSH_KEYCHAIN_SERVICE/SSH_KEYCHAIN_ACCOUNT if the Keychain item uses a custom name." >&2
+    exit 1
+  fi
+
+  echo "Could not preload SSH key from Keychain; SSH may prompt for the passphrase." >&2
 }
 
 run_local() {
@@ -201,8 +420,10 @@ SSH_ARGS=(-p "${VPS_SSH_PORT}")
 RSYNC_SSH="ssh -p ${VPS_SSH_PORT}"
 
 if [[ -n "${SSH_KEY_PATH:-}" ]]; then
-  SSH_ARGS=(-i "${SSH_KEY_PATH/#\~/${HOME}}" "${SSH_ARGS[@]}")
-  RSYNC_SSH="ssh -i ${SSH_KEY_PATH/#\~/${HOME}} -p ${VPS_SSH_PORT}"
+  SSH_KEY_PATH_EXPANDED="$(expand_path "${SSH_KEY_PATH}")"
+  prepare_ssh_key "${SSH_KEY_PATH_EXPANDED}"
+  SSH_ARGS=(-i "${SSH_KEY_PATH_EXPANDED}" "${SSH_ARGS[@]}")
+  RSYNC_SSH="ssh -i $(shell_quote "${SSH_KEY_PATH_EXPANDED}") -p $(shell_quote "${VPS_SSH_PORT}")"
 fi
 
 remote() {
@@ -470,7 +691,7 @@ rsync -az --delete \
 
 echo "Writing remote runtime env"
 TMP_ENV="$(mktemp)"
-trap 'rm -f "${TMP_ENV}"' EXIT
+CLEANUP_FILES+=("${TMP_ENV}")
 {
   write_env_line "APP_NAME" "${APP_NAME:-B3 Watch API}"
   write_env_line "DATABASE_PATH" "${DATABASE_PATH}"
