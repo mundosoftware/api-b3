@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -12,12 +13,36 @@
       color: #111;
       max-width: 860px;
     }
-    h1, h2, h3 { color: #0a0a23; }
-    h1 { margin: 0; line-height: 1.15; }
-    p { margin: 0 0 1rem; }
-    ul { margin: 0 0 1rem 1.5rem; }
-    header { margin-bottom: 1.5rem; }
-    footer { margin-top: 2rem; font-size: 0.9rem; color: #555; }
+
+    h1,
+    h2,
+    h3 {
+      color: #0a0a23;
+    }
+
+    h1 {
+      margin: 0;
+      line-height: 1.15;
+    }
+
+    p {
+      margin: 0 0 1rem;
+    }
+
+    ul {
+      margin: 0 0 1rem 1.5rem;
+    }
+
+    header {
+      margin-bottom: 1.5rem;
+    }
+
+    footer {
+      margin-top: 2rem;
+      font-size: 0.9rem;
+      color: #555;
+    }
+
     .title-row {
       align-items: flex-start;
       display: flex;
@@ -25,6 +50,7 @@
       justify-content: space-between;
       margin-bottom: 0.75rem;
     }
+
     .language-toggle {
       appearance: none;
       background: #0a0a23;
@@ -37,22 +63,34 @@
       padding: 0.45rem 0.75rem;
       white-space: nowrap;
     }
+
     .language-toggle:focus-visible {
       outline: 3px solid #7aa7ff;
       outline-offset: 2px;
     }
-    [hidden] { display: none !important; }
+
+    [hidden] {
+      display: none !important;
+    }
+
     @media (max-width: 600px) {
-      body { margin: 18px; }
+      body {
+        margin: 18px;
+      }
+
       .title-row {
         align-items: stretch;
         flex-direction: column;
         gap: 12px;
       }
-      .language-toggle { width: fit-content; }
+
+      .language-toggle {
+        width: fit-content;
+      }
     }
   </style>
 </head>
+
 <body>
   <header>
     <div class="title-row">
@@ -68,8 +106,11 @@
     <article data-lang="pt">
       <section>
         <h2>Introdução</h2>
-        <p>Trade Alert é um app para iPhone, iPad e Apple Watch que ajuda usuários a monitorar tickers brasileiros da B3, salvar favoritos e receber notificações de alerta por preço ou percentual.</p>
-        <p>Esta página explica como o app coleta, usa e protege os dados necessários para entregar notificações e gerenciar alertas. Ela também descreve os termos aplicáveis ao acesso ao app, assinaturas, testes grátis e compras de acesso vitalício.</p>
+        <p>Trade Alert é um app para iPhone, iPad e Apple Watch que ajuda usuários a monitorar tickers brasileiros da
+          B3, salvar favoritos e receber notificações de alerta por preço ou percentual.</p>
+        <p>Esta página explica como o app coleta, usa e protege os dados necessários para entregar notificações e
+          gerenciar alertas. Ela também descreve os termos aplicáveis ao acesso ao app, assinaturas, testes grátis e
+          compras de acesso vitalício.</p>
       </section>
 
       <section>
@@ -80,9 +121,12 @@
           <li>Identificadores do Apple Watch ou do dispositivo companion usados pelo backend para enviar alertas</li>
           <li>Tickers acompanhados, favoritos e configurações de regras de alerta escolhidos pelo usuário</li>
           <li>Fuso horário e idioma opcionais quando necessários para alertas agendados</li>
-          <li>Eventos técnicos de compras e assinaturas, como visualização da tela de assinatura, produtos carregados, produto indisponível, compra iniciada, compra concluída, falha de compra, restauração e status de direito de acesso</li>
+          <li>Eventos técnicos de compras e assinaturas, como visualização da tela de assinatura, produtos carregados,
+            produto indisponível, compra iniciada, compra concluída, falha de compra, restauração e status de direito de
+            acesso</li>
         </ul>
-        <p>O app usa Apple StoreKit para verificar se você tem uma assinatura ativa, teste grátis ou acesso vitalício. O Trade Alert não coleta dados de cartão de pagamento.</p>
+        <p>O app usa Apple StoreKit para verificar se você tem uma assinatura ativa, teste grátis ou acesso vitalício. O
+          Trade Alert não coleta dados de cartão de pagamento.</p>
       </section>
 
       <section>
@@ -94,66 +138,96 @@
           <li>armazenar tickers acompanhados, favoritos e preferências de alerta</li>
           <li>buscar e exibir cotações da B3 a partir do backend</li>
           <li>validar o status de compra e restaurar acesso adquirido pela App Store</li>
-          <li>diagnosticar falhas de carregamento de produtos, teste grátis, oferta promocional, compra, assinatura e restauração</li>
+          <li>diagnosticar falhas de carregamento de produtos, teste grátis, oferta promocional, compra, assinatura e
+            restauração</li>
         </ul>
       </section>
 
       <section>
         <h2>Compras, Assinaturas e Testes</h2>
-        <p>O Trade Alert pode oferecer assinaturas renováveis automaticamente, teste introdutório grátis quando disponível e uma compra não consumível de acesso vitalício. As compras são processadas pela Apple por meio da App Store.</p>
+        <p>O Trade Alert pode oferecer assinaturas renováveis automaticamente, teste introdutório grátis quando
+          disponível e uma compra não consumível de acesso vitalício. As compras são processadas pela Apple por meio da
+          App Store.</p>
         <p>Os preços de referência no Brasil são:</p>
         <ul>
-          <li>Pro Anual (<code>pro_year</code>): 7 dias de teste grátis quando elegível. Após o teste, a primeira cobrança anual pode usar a oferta promocional de R$ 24,90 para o primeiro ano. Depois disso, a assinatura renova automaticamente pelo preço cheio de R$ 34,90 por ano a partir do segundo ano e nos anos seguintes, até cancelamento.</li>
-          <li>Pro Mensal (<code>pro_month</code>): R$ 4,90 por mês, com renovação automática mensal até cancelamento.</li>
+          <li>Pro Anual (<code>pro_year</code>): 7 dias de teste grátis quando elegível. Após o teste, a primeira
+            cobrança anual pode usar a oferta promocional de R$ 24,90 para o primeiro ano. Depois disso, a assinatura
+            renova automaticamente pelo preço cheio de R$ 34,90 por ano a partir do segundo ano e nos anos seguintes,
+            até cancelamento.</li>
+          <li>Pro Mensal (<code>pro_month</code>): R$ 4,90 por mês, com renovação automática mensal até cancelamento.
+          </li>
           <li>Acesso Vitalício (<code>lifetime_unlock</code>): R$ 49,90 em compra única não consumível.</li>
         </ul>
-        <p>Em outros países ou regiões, a App Store pode exibir preços convertidos automaticamente pela Apple, incluindo variações por câmbio, tributos e regras locais. O preço final aplicável é sempre o exibido pela App Store antes da confirmação da compra.</p>
-        <p>Cobrança de assinatura, renovação, cancelamento, reembolso e gerenciamento do método de pagamento são tratados pela Apple. Você pode gerenciar ou cancelar assinaturas nos ajustes de assinatura da sua Conta Apple.</p>
-        <p>Se você iniciar um teste grátis, a Apple poderá convertê-lo em assinatura paga ao fim do período de teste, a menos que você cancele pela sua Conta Apple antes da data de renovação indicada pela Apple.</p>
-        <p>O acesso vitalício é uma compra única dentro do app que libera o acesso para a Conta Apple que realizou a compra, sujeita ao comportamento de restauração da App Store.</p>
+        <p>Em outros países ou regiões, a App Store pode exibir preços convertidos automaticamente pela Apple, incluindo
+          variações por câmbio, tributos e regras locais. O preço final aplicável é sempre o exibido pela App Store
+          antes da confirmação da compra.</p>
+        <p>Cobrança de assinatura, renovação, cancelamento, reembolso e gerenciamento do método de pagamento são
+          tratados pela Apple. Você pode gerenciar ou cancelar assinaturas nos ajustes de assinatura da sua Conta Apple.
+        </p>
+        <p>Se você iniciar um teste grátis, a Apple poderá convertê-lo em assinatura paga ao fim do período de teste, a
+          menos que você cancele pela sua Conta Apple antes da data de renovação indicada pela Apple.</p>
+        <p>O acesso vitalício é uma compra única dentro do app que libera o acesso para a Conta Apple que realizou a
+          compra, sujeita ao comportamento de restauração da App Store.</p>
       </section>
 
       <section>
         <h2>Termos de Uso</h2>
-        <p>O Trade Alert oferece ferramentas de monitoramento de mercado e notificações apenas para conveniência. Ele não constitui aconselhamento de investimento, financeiro, tributário ou jurídico.</p>
-        <p>Dados de mercado, entrega de alertas, notificações push, serviços de rede e serviços de terceiros podem sofrer atrasos, indisponibilidade ou imprecisões. Você é responsável por verificar as informações antes de tomar decisões financeiras.</p>
-        <p>Você concorda em não usar o app de forma indevida, interferir no serviço de backend, tentar acesso não autorizado ou usar o app de maneira que viole leis aplicáveis ou regras da App Store.</p>
-        <p>O acesso a recursos pagos exige um direito de acesso ativo, como assinatura ativa, teste ativo, acesso vitalício ou acesso legado concedido a compradores anteriores elegíveis.</p>
+        <p>O uso do Trade Alert está condicionado à Aceitação dos Termos e Condições da Apple (EULA): https://www.apple.com/legal/internet-services/itunes/dev/stdeula/.</p>
+          <p>No mais, os termos a seguir se aplicam ao serviços do Trade Alert.</p>
+        <p>O Trade Alert oferece ferramentas de monitoramento de mercado e notificações apenas para conveniência. Ele
+          não constitui aconselhamento de investimento, financeiro, tributário ou jurídico.</p>
+        <p>Dados de mercado, entrega de alertas, notificações push, serviços de rede e serviços de terceiros podem
+          sofrer atrasos, indisponibilidade ou imprecisões. Você é responsável por verificar as informações antes de
+          tomar decisões financeiras.</p>
+        <p>Você concorda em não usar o app de forma indevida, interferir no serviço de backend, tentar acesso não
+          autorizado ou usar o app de maneira que viole leis aplicáveis ou regras da App Store.</p>
+        <p>O acesso a recursos pagos exige um direito de acesso ativo, como assinatura ativa, teste ativo, acesso
+          vitalício ou acesso legado concedido a compradores anteriores elegíveis.</p>
       </section>
 
       <section>
         <h2>Compartilhamento de Dados</h2>
-        <p>O Trade Alert não vende dados pessoais. Tokens de notificação e configurações do usuário são compartilhados apenas com o serviço de backend e com o provedor de notificações necessário para entregar alertas.</p>
-        <p>O app usa OneSignal para entrega de push, com registro no servidor para manter credenciais de API privadas.</p>
+        <p>O Trade Alert não vende dados pessoais. Tokens de notificação e configurações do usuário são compartilhados
+          apenas com o serviço de backend e com o provedor de notificações necessário para entregar alertas.</p>
+        <p>O app usa OneSignal para entrega de push, com registro no servidor para manter credenciais de API privadas.
+        </p>
       </section>
 
       <section>
         <h2>Segurança</h2>
-        <p>Medidas de segurança são usadas para proteger dados em trânsito e em repouso. Credenciais sensíveis de push são armazenadas no servidor de backend em vez de ficarem no app do Apple Watch.</p>
+        <p>Medidas de segurança são usadas para proteger dados em trânsito e em repouso. Credenciais sensíveis de push
+          são armazenadas no servidor de backend em vez de ficarem no app do Apple Watch.</p>
       </section>
 
       <section>
         <h2>Controle do Usuário</h2>
-        <p>Usuários podem gerenciar tickers acompanhados e regras de alerta diretamente no app. Permissões de notificação do dispositivo podem ser alteradas nos ajustes do iOS, iPadOS e Apple Watch, e usuários podem remover registros de dispositivos do backend quando desejado.</p>
+        <p>Usuários podem gerenciar tickers acompanhados e regras de alerta diretamente no app. Permissões de
+          notificação do dispositivo podem ser alteradas nos ajustes do iOS, iPadOS e Apple Watch, e usuários podem
+          remover registros de dispositivos do backend quando desejado.</p>
         <p>Usuários podem restaurar compras da App Store dentro do app.</p>
       </section>
 
       <section>
         <h2>Serviços de Terceiros</h2>
-        <p>O app integra-se ao OneSignal para entrega de notificações push e a uma API de backend para consulta de cotações. Esses serviços processam apenas os dados mínimos necessários para alertas e registro de push.</p>
+        <p>O app integra-se ao OneSignal para entrega de notificações push e a uma API de backend para consulta de
+          cotações. Esses serviços processam apenas os dados mínimos necessários para alertas e registro de push.</p>
       </section>
 
       <section>
         <h2>Contato</h2>
-        <p>Se você tiver dúvidas sobre esta política, entre em contato com o desenvolvedor pelo canal de suporte da App Store.</p>
+        <p>Se você tiver dúvidas sobre esta política, entre em contato com o desenvolvedor pelo canal de suporte da App
+          Store.</p>
       </section>
     </article>
 
     <article data-lang="en" hidden>
       <section>
         <h2>Introduction</h2>
-        <p>Trade Alert is an iPhone, iPad and Apple Watch app that helps users monitor Brazilian B3 stock tickers, save favorites, and receive price or percentage alert notifications.</p>
-        <p>This page explains how the app collects, uses, and protects data required to deliver notifications and alert management. It also describes the terms that apply to app access, subscriptions, free trials, and lifetime unlock purchases.</p>
+        <p>Trade Alert is an iPhone, iPad and Apple Watch app that helps users monitor Brazilian B3 stock tickers, save
+          favorites, and receive price or percentage alert notifications.</p>
+        <p>This page explains how the app collects, uses, and protects data required to deliver notifications and alert
+          management. It also describes the terms that apply to app access, subscriptions, free trials, and lifetime
+          unlock purchases.</p>
       </section>
 
       <section>
@@ -164,9 +238,11 @@
           <li>Watch or companion device identifiers used by the backend to send alerts</li>
           <li>User-selected tracked tickers, favorites, and alert rule settings</li>
           <li>Optional timezone and locale details necessary for scheduled alerts</li>
-          <li>Technical purchase and subscription events, such as paywall views, loaded products, unavailable products, purchase started, purchase completed, purchase failed, restore, and entitlement status</li>
+          <li>Technical purchase and subscription events, such as paywall views, loaded products, unavailable products,
+            purchase started, purchase completed, purchase failed, restore, and entitlement status</li>
         </ul>
-        <p>The app uses Apple StoreKit to check whether you have an active subscription, free trial, or lifetime unlock. Trade Alert does not collect payment card details.</p>
+        <p>The app uses Apple StoreKit to check whether you have an active subscription, free trial, or lifetime unlock.
+          Trade Alert does not collect payment card details.</p>
       </section>
 
       <section>
@@ -178,65 +254,91 @@
           <li>storing tracked tickers, favorites, and alert preferences</li>
           <li>fetching and displaying B3 quote data from the backend</li>
           <li>validating purchase status and restoring access purchased through the App Store</li>
-          <li>diagnosing product loading, free trial, promotional offer, purchase, subscription, and restore failures</li>
+          <li>diagnosing product loading, free trial, promotional offer, purchase, subscription, and restore failures
+          </li>
         </ul>
       </section>
 
       <section>
         <h2>Purchases, Subscriptions and Trials</h2>
-        <p>Trade Alert may offer auto-renewable subscriptions, a free introductory trial when available, and a non-consumable lifetime unlock. Purchases are processed by Apple through the App Store.</p>
+        <p>Trade Alert may offer auto-renewable subscriptions, a free introductory trial when available, and a
+          non-consumable lifetime unlock. Purchases are processed by Apple through the App Store.</p>
         <p>Brazil reference prices are:</p>
         <ul>
-          <li>Pro Yearly (<code>pro_year</code>): 7-day free trial when eligible. After the trial, the first yearly billing period may use the promotional offer price of R$ 24.90 for the first year. After that, the subscription renews automatically at the full price of R$ 34.90 per year from the second year onward until cancelled.</li>
-          <li>Pro Monthly (<code>pro_month</code>): R$ 4.90 per month, automatically renewing monthly until cancelled.</li>
+          <li>Pro Yearly (<code>pro_year</code>): 7-day free trial when eligible. After the trial, the first yearly
+            billing period may use the promotional offer price of R$ 24.90 for the first year. After that, the
+            subscription renews automatically at the full price of R$ 34.90 per year from the second year onward until
+            cancelled.</li>
+          <li>Pro Monthly (<code>pro_month</code>): R$ 4.90 per month, automatically renewing monthly until cancelled.
+          </li>
           <li>Lifetime Unlock (<code>lifetime_unlock</code>): R$ 49.90 as a one-time non-consumable purchase.</li>
         </ul>
-        <p>In other countries or regions, the App Store may show prices automatically converted by Apple, including variations for currency exchange, taxes, and local rules. The final applicable price is always the price shown by the App Store before purchase confirmation.</p>
-        <p>Subscription billing, renewal, cancellation, refunds, and payment method management are handled by Apple. You can manage or cancel subscriptions in your Apple ID subscription settings.</p>
-        <p>If you start a free trial, Apple may convert it into a paid subscription at the end of the trial unless you cancel through your Apple ID settings before the renewal date shown by Apple.</p>
-        <p>The lifetime unlock is a one-time in-app purchase that unlocks access for the Apple ID that purchased it, subject to App Store restore behavior.</p>
+        <p>In other countries or regions, the App Store may show prices automatically converted by Apple, including
+          variations for currency exchange, taxes, and local rules. The final applicable price is always the price shown
+          by the App Store before purchase confirmation.</p>
+        <p>Subscription billing, renewal, cancellation, refunds, and payment method management are handled by Apple. You
+          can manage or cancel subscriptions in your Apple ID subscription settings.</p>
+        <p>If you start a free trial, Apple may convert it into a paid subscription at the end of the trial unless you
+          cancel through your Apple ID settings before the renewal date shown by Apple.</p>
+        <p>The lifetime unlock is a one-time in-app purchase that unlocks access for the Apple ID that purchased it,
+          subject to App Store restore behavior.</p>
       </section>
 
       <section>
         <h2>Terms of Use</h2>
-        <p>Trade Alert provides market monitoring tools and notifications for convenience only. It is not investment, financial, tax, or legal advice.</p>
-        <p>Market data, alert delivery, push notifications, network services, and third-party services may be delayed, unavailable, or inaccurate. You are responsible for verifying information before making financial decisions.</p>
-        <p>You agree not to misuse the app, interfere with the backend service, attempt unauthorized access, or use the app in a way that violates applicable law or App Store rules.</p>
-        <p>Access to paid features requires an active entitlement, such as an active subscription, active trial, lifetime unlock, or legacy paid-app access granted to eligible previous buyers.</p>
+        <p>Use of Trade Alert is subject to Apple’s Standard End User License Agreement (EULA): https://www.apple.com/legal/internet-services/itunes/dev/stdeula/.</p>
+          <p>In addition, the following terms apply to the Trade Alert service.</p>
+        <p>Trade Alert provides market monitoring tools and notifications for convenience only. It is not investment,
+          financial, tax, or legal advice.</p>
+        <p>Market data, alert delivery, push notifications, network services, and third-party services may be delayed,
+          unavailable, or inaccurate. You are responsible for verifying information before making financial decisions.
+        </p>
+        <p>You agree not to misuse the app, interfere with the backend service, attempt unauthorized access, or use the
+          app in a way that violates applicable law or App Store rules.</p>
+        <p>Access to paid features requires an active entitlement, such as an active subscription, active trial,
+          lifetime unlock, or legacy paid-app access granted to eligible previous buyers.</p>
       </section>
 
       <section>
         <h2>Data Sharing</h2>
-        <p>Trade Alert does not sell personal data. Notification tokens and user settings are shared only with the backend service and the push notification provider necessary to deliver alerts.</p>
+        <p>Trade Alert does not sell personal data. Notification tokens and user settings are shared only with the
+          backend service and the push notification provider necessary to deliver alerts.</p>
         <p>The app uses OneSignal for push delivery, with server-side registration to keep API credentials private.</p>
       </section>
 
       <section>
         <h2>Security</h2>
-        <p>Security measures are used to protect data in transit and at rest. Sensitive push credentials are stored on the backend server rather than in the watch app.</p>
+        <p>Security measures are used to protect data in transit and at rest. Sensitive push credentials are stored on
+          the backend server rather than in the watch app.</p>
       </section>
 
       <section>
         <h2>User Control</h2>
-        <p>Users can manage tracked tickers and alert rules directly in the app. Device notification permissions can be modified through iOS, iPadOS, and Apple Watch settings, and users can unregister devices from the backend if desired.</p>
+        <p>Users can manage tracked tickers and alert rules directly in the app. Device notification permissions can be
+          modified through iOS, iPadOS, and Apple Watch settings, and users can unregister devices from the backend if
+          desired.</p>
         <p>Users can restore App Store purchases from inside the app.</p>
       </section>
 
       <section>
         <h2>Third-Party Services</h2>
-        <p>The app integrates with OneSignal for push notification delivery and a backend API for stock quote retrieval. These services process only the minimal data required for alerts and push registration.</p>
+        <p>The app integrates with OneSignal for push notification delivery and a backend API for stock quote retrieval.
+          These services process only the minimal data required for alerts and push registration.</p>
       </section>
 
       <section>
         <h2>Contact</h2>
-        <p>If you have questions about this policy, please contact the developer through the app store support channel.</p>
+        <p>If you have questions about this policy, please contact the developer through the app store support channel.
+        </p>
       </section>
     </article>
   </main>
 
   <footer>
-    <p data-lang="pt">O Trade Alert foca em entregar alertas de ações da B3 para usuários de dispositivos Apple, minimizando a coleta de dados e protegendo credenciais de notificação.</p>
-    <p data-lang="en" hidden>Trade Alert is focused on delivering B3 stock alerts to Apple device users while minimizing data collection and protecting notification credentials.</p>
+    <p data-lang="pt">O Trade Alert foca em entregar alertas de ações da B3 para usuários de dispositivos Apple,
+      minimizando a coleta de dados e protegendo credenciais de notificação.</p>
+    <p data-lang="en" hidden>Trade Alert is focused on delivering B3 stock alerts to Apple device users while minimizing
+      data collection and protecting notification credentials.</p>
   </footer>
 
   <script>
@@ -294,4 +396,5 @@
     showLanguage(preferredLanguage());
   </script>
 </body>
+
 </html>
