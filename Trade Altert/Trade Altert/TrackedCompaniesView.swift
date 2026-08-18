@@ -3,6 +3,8 @@ import SwiftUI
 struct TrackedCompaniesView: View {
     @EnvironmentObject private var model: CompanionAppModel
     @EnvironmentObject private var language: AppLanguage
+    @EnvironmentObject private var purchases: PurchaseStore
+    @State private var showPlansSheet = false
 
     var body: some View {
         List {
@@ -27,13 +29,60 @@ struct TrackedCompaniesView: View {
             }
         }
         .navigationTitle(language.text("title.tracked"))
+        .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             if model.isLoading {
-                ProgressView()
+                ToolbarItem(placement: .topBarTrailing) {
+                    ProgressView()
+                }
             }
+
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    showPlansSheet = true
+                } label: {
+                    Text(language.text("action.plans"))
+                        .font(.headline)
+                }
+            }
+        }
+        .sheet(isPresented: $showPlansSheet) {
+            PurchasePlansSheetView()
+                .presentationDetents([.large])
+                .interactiveDismissDisabled(false)
         }
         .refreshable {
             await model.refreshFavorites()
+        }
+    }
+}
+
+struct PurchasePlansSheetView: View {
+    @EnvironmentObject private var purchases: PurchaseStore
+    @EnvironmentObject private var language: AppLanguage
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Spacer()
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.title2)
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 12)
+                .padding(.trailing, 16)
+            }
+
+            PaywallView()
+        }
+        .background(Color(.systemGroupedBackground))
+        .task {
+            await purchases.load()
         }
     }
 }

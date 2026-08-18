@@ -23,7 +23,7 @@ struct PaywallView: View {
     }
 
     var body: some View {
-        ScrollView {
+        ScrollView(.vertical, showsIndicators: true) {
             VStack(alignment: .leading, spacing: 22) {
                 header
                 features
@@ -44,6 +44,9 @@ struct PaywallView: View {
             .frame(maxWidth: .infinity)
         }
         .background(Color(.systemGroupedBackground))
+        .refreshable {
+            // Keep the paywall modal free from pull-to-refresh gestures.
+        }
         .task {
             await purchases.load()
             selectedProductID = PurchaseStore.ProductID.proYear
