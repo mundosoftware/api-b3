@@ -308,6 +308,56 @@ class IAPTelemetryEventListOut(BaseModel):
     result: list[IAPTelemetryEventOut]
 
 
+class IAPTrialStatusOut(BaseModel):
+    product_id: str
+    status: str
+    starts_at: str | None = None
+    ends_at: str | None = None
+    next_available_at: str | None = None
+    request_count: int
+    can_request: bool
+    current_time: str | None = None
+    elapsed_days: int = 0
+    remaining_days: int = 0
+    remaining_seconds: int = 0
+    total_trial_days: int = 7
+    message: str | None = None
+
+
+class IAPTrialRequestOut(IAPTrialStatusOut):
+    pass
+
+
+class IAPTrialTelemetryOut(IAPTrialStatusOut):
+    user_id: str
+    last_requested_at: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+class IAPTrialTelemetryListOut(BaseModel):
+    result: list[IAPTrialTelemetryOut]
+
+
+class IAPTrialAdjustmentRequest(BaseModel):
+    days: int = Field(ge=-366, le=366)
+    reason: str | None = Field(default=None, max_length=128)
+
+    @field_validator("days")
+    @classmethod
+    def validate_non_zero_days(cls, value: int) -> int:
+        if value == 0:
+            raise ValueError("days must not be zero")
+        return value
+
+
+class IAPTrialAdjustmentOut(IAPTrialTelemetryOut):
+    adjustment_days: int
+    previous_ends_at: str | None = None
+    new_ends_at: str | None = None
+    ended: bool
+
+
 class IAPTelemetryCountOut(BaseModel):
     name: str
     count: int

@@ -10,6 +10,7 @@ final class PurchaseStore: ObservableObject {
         static let lifetimeUnlock = "lifetime_unlock"
         static let proMonth = "pro_month"
         static let proYear = "pro_year"
+        static let trialSevenDays = "trial_7_days"
     }
 
     static let privacyAndTermsURL = URL(string: "https://mundsoftware.com/trade-alert/privacy.html")!
@@ -29,6 +30,7 @@ final class PurchaseStore: ObservableObject {
     private static let lastPaidAppVersion = "1.1.0"
 
     @Published private(set) var products: [Product] = []
+    @Published private(set) var trialStatus: IAPTrialStatus?
     @Published private(set) var purchasedProductIDs: Set<String> = []
     @Published private(set) var introOfferEligibleProductIDs: Set<String> = []
     @Published private(set) var hasAccess = false
@@ -55,7 +57,23 @@ final class PurchaseStore: ObservableObject {
             ?? ProductID.proYear
     }
 
+    var isTrialActive: Bool {
+        trialStatus?.isActive == true
+    }
+
+    var isTrialPending: Bool {
+        trialStatus?.isPending == true
+    }
+
+    var trialDaysLeft: Int {
+        trialStatus?.daysLeft ?? 0
+    }
+
     func load() async {
+        await load(userId: nil)
+    }
+
+    func load(userId: String?) async {
         guard !isLoadingProducts else { return }
 
         isLoadingProducts = true
@@ -70,8 +88,24 @@ final class PurchaseStore: ObservableObject {
         }
 
         await refreshPurchasedProducts()
+        if let userId {
+            trialStatus = try? await CompanionAPIClient.shared.iapTrial(userId: userId)
+            updateHasAccess()
+        }
         hasResolvedAccess = true
         isLoadingProducts = false
+    }
+
+    func requestTrial(userId: String) async -> IAPTrialStatus? {
+        do {
+            let status = try await CompanionAPIClient.shared.requestIAPTrial(userId: userId)
+            trialStatus = status
+            updateHasAccess()
+            return status
+        } catch {
+            message = error.localizedDescription
+            return nil
+        }
     }
 
     func purchase(_ product: Product) async {
@@ -149,7 +183,11 @@ final class PurchaseStore: ObservableObject {
         let hasLegacyAccess = await hasLegacyPaidAppAccess()
         purchasedProductIDs = activeProductIDs
         legacyPaidAccess = hasLegacyAccess
-        hasAccess = hasLegacyAccess || !activeProductIDs.isEmpty
+        updateHasAccess()
+    }
+
+    private func updateHasAccess() {
+        hasAccess = legacyPaidAccess || !purchasedProductIDs.isEmpty || isTrialActive
     }
 
     private func eligibleIntroOfferIDs(in products: [Product]) async -> Set<String> {

@@ -34,6 +34,11 @@ from src.models import (
     IAPTelemetryEventOut,
     IAPTelemetryOutcomeListOut,
     IAPTelemetrySummaryOut,
+    IAPTrialAdjustmentOut,
+    IAPTrialAdjustmentRequest,
+    IAPTrialRequestOut,
+    IAPTrialStatusOut,
+    IAPTrialTelemetryListOut,
     NotificationPreferencesOut,
     NotificationPreferencesUpdateRequest,
     NotificationLogListOut,
@@ -231,6 +236,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ) -> IAPTelemetryEventOut:
         return IAPTelemetryEventOut(**repository.record_iap_telemetry_event(user_id, request))
 
+    @app.get("/users/{user_id}/iap/trial", response_model=IAPTrialStatusOut)
+    async def get_iap_trial(user_id: str) -> IAPTrialStatusOut:
+        return IAPTrialStatusOut(**repository.get_iap_trial(user_id))
+
+    @app.post("/users/{user_id}/iap/trial", response_model=IAPTrialRequestOut)
+    async def request_iap_trial(user_id: str) -> IAPTrialRequestOut:
+        return IAPTrialRequestOut(**repository.request_iap_trial(user_id))
+
     @app.get("/users/{user_id}/favorites", response_model=FavoriteListOut)
     async def list_favorites(user_id: str) -> FavoriteListOut:
         return FavoriteListOut(result=repository.list_favorites(user_id))
@@ -379,6 +392,65 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 environment=environment,
             )
         )
+
+    @app.get("/admin/telemetry/iap-trial-extension-asks", response_model=IAPTelemetryEventListOut)
+    async def telemetry_iap_trial_extension_asks(
+        x_admin_token: str | None = Header(default=None),
+        user_id: str | None = Query(default=None),
+        environment: str | None = Query(default=None),
+        limit: int = Query(default=100, ge=1, le=500),
+    ) -> IAPTelemetryEventListOut:
+        require_admin(x_admin_token)
+        return IAPTelemetryEventListOut(
+            result=telemetry.iap_trial_extension_requests(
+                user_id=user_id, environment=environment, limit=limit
+            )
+        )
+
+    @app.get("/admin/telemetry/iap-trials", response_model=IAPTrialTelemetryListOut)
+    async def telemetry_iap_trials(
+        x_admin_token: str | None = Header(default=None),
+        user_id: str | None = Query(default=None),
+        status_filter: Literal["active", "expired", "pending"] | None = Query(
+            default=None, alias="status"
+        ),
+        limit: int = Query(default=100, ge=1, le=500),
+    ) -> IAPTrialTelemetryListOut:
+        require_admin(x_admin_token)
+        return IAPTrialTelemetryListOut(
+            result=repository.list_iap_trials(
+                limit=limit,
+                user_id=user_id,
+                status=status_filter,
+            )
+        )
+
+    @app.post(
+        "/admin/telemetry/iap-trials/{user_id}/adjust",
+        response_model=IAPTrialAdjustmentOut,
+    )
+    async def adjust_iap_trial(
+        user_id: str,
+        request: IAPTrialAdjustmentRequest,
+        x_admin_token: str | None = Header(default=None),
+    ) -> IAPTrialAdjustmentOut:
+        require_admin(x_admin_token)
+        try:
+            return IAPTrialAdjustmentOut(
+                **repository.adjust_iap_trial_period(
+                    user_id=user_id,
+                    days=request.days,
+                    reason=request.reason,
+                )
+            )
+        except ValueError as exc:
+            if "not found" in str(exc):
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
+                ) from exc
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+            ) from exc
 
     @app.get("/admin/telemetry/iap-buying-attempts", response_model=IAPTelemetryEventListOut)
     async def telemetry_iap_buying_attempts(

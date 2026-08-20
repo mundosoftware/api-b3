@@ -94,7 +94,7 @@ The watch APNs token belongs to the watch app bundle, so it must be registered i
 Create a local `local.env` from `local.env.example`, fill the VPS and OneSignal values, then run:
 
 ```bash
-./scripts/deploy_vps.sh vps
+sudo bash scripts/deploy_vps.sh vps
 ```
 
 The script installs system packages, syncs the project, creates a Python venv, writes the remote `local.env`, installs a systemd service with one Uvicorn worker, and starts the API behind nginx when `PUBLIC_SERVER_PORT` differs from `SERVER_PORT` or HTTPS is enabled.

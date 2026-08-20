@@ -53,6 +53,20 @@ class TelemetryService:
             )
         return result
 
+    def iap_trial_extension_requests(
+        self,
+        user_id: str | None = None,
+        environment: str | None = None,
+        limit: int = 100,
+    ) -> list[dict]:
+        return self.repository.list_iap_telemetry_events(
+            limit=limit,
+            user_id=user_id,
+            product_id="trial_7_days",
+            event_type="trial_extension_requested",
+            environment=environment,
+        )
+
     def _parse_now(self, value: str | None) -> datetime:
         if not value:
             return datetime.now(UTC)

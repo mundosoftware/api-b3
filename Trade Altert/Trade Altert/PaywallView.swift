@@ -4,10 +4,15 @@ import SwiftUI
 struct PaywallView: View {
     @EnvironmentObject private var purchases: PurchaseStore
     @EnvironmentObject private var language: AppLanguage
+    @EnvironmentObject private var model: CompanionAppModel
     @State private var selectedProductID = PurchaseStore.ProductID.proYear
     @State private var showsOtherPlans = false
+    @State private var showsTrialWaitAlert = false
 
     private var selectedProduct: Product? {
+        guard selectedProductID != PurchaseStore.ProductID.trialSevenDays else {
+            return nil
+        }
         guard selectedProductID != PurchaseStore.ProductID.proYear || proYearProduct != nil else {
             return nil
         }
@@ -20,6 +25,40 @@ struct PaywallView: View {
 
     private var otherProducts: [Product] {
         purchases.products.filter { $0.id != PurchaseStore.ProductID.proYear }
+    }
+
+    private var isTrialSelected: Bool {
+        selectedProductID == PurchaseStore.ProductID.trialSevenDays
+    }
+
+    private var shouldShowServerTrialCard: Bool {
+        !purchases.isTrialActive
+    }
+
+    private var canSelectServerTrial: Bool {
+        purchases.trialStatus?.status != "pending"
+    }
+
+    private var trialTitleKey: String {
+        purchases.trialStatus?.status == "expired" && (purchases.trialStatus?.requestCount ?? 0) > 0
+            ? "paywall.trial.ended.title"
+            : "paywall.trial.title"
+    }
+
+    private var paywallTitle: String {
+        if purchases.isTrialActive {
+            return language.text("paywall.trial.active.paywall_title")
+        }
+
+        if purchases.isTrialPending {
+            return language.text("paywall.trial.pending.paywall_title")
+        }
+
+        return language.text(
+            purchases.trialStatus?.status == "expired" && (purchases.trialStatus?.requestCount ?? 0) > 0
+                ? "paywall.trial.ended.paywall_title"
+                : "paywall.title"
+        )
     }
 
     var body: some View {
@@ -44,15 +83,13 @@ struct PaywallView: View {
             .frame(maxWidth: .infinity)
         }
         .background(Color(.systemGroupedBackground))
-        .refreshable {
-            // Keep the paywall modal free from pull-to-refresh gestures.
-        }
         .task {
-            await purchases.load()
+            await purchases.load(userId: model.userId)
             selectedProductID = PurchaseStore.ProductID.proYear
         }
         .onChange(of: purchases.products.map(\.id)) { _, _ in
-            guard purchases.products.contains(where: { $0.id == selectedProductID }) else {
+            guard selectedProductID == PurchaseStore.ProductID.trialSevenDays
+                || purchases.products.contains(where: { $0.id == selectedProductID }) else {
                 selectedProductID = PurchaseStore.ProductID.proYear
                 return
             }
@@ -68,7 +105,7 @@ struct PaywallView: View {
                 .font(.system(size: 42, weight: .semibold))
                 .foregroundStyle(.green)
 
-            Text(language.text("paywall.title"))
+            Text(paywallTitle)
                 .font(.largeTitle.bold())
                 .multilineTextAlignment(.leading)
 
@@ -160,6 +197,22 @@ struct PaywallView: View {
                                 }
                             )
                         }
+
+                        if shouldShowServerTrialCard {
+                            TrialPlanCard(
+                                isSelected: isTrialSelected,
+                                isEnabled: canSelectServerTrial,
+                                title: language.text(trialTitleKey),
+                                subtitle: language.text("paywall.trial.subtitle"),
+                                badge: language.text("paywall.badge.trial"),
+                                message: purchases.isTrialPending
+                                    ? language.text("paywall.trial.wait.message")
+                                    : nil,
+                                onSelect: {
+                                    selectedProductID = PurchaseStore.ProductID.trialSevenDays
+                                }
+                            )
+                        }
                     }
                     .transition(.opacity.combined(with: .move(edge: .top)))
                 }
@@ -168,7 +221,7 @@ struct PaywallView: View {
                     loadedProductIDs: purchases.products.map(\.id)
                 )
 
-                if !otherProducts.isEmpty {
+                if true {
                     Button {
                         withAnimation(.snappy) {
                             showsOtherPlans.toggle()
@@ -203,6 +256,22 @@ struct PaywallView: View {
                                     }
                                 )
                             }
+
+                            if shouldShowServerTrialCard {
+                                TrialPlanCard(
+                                    isSelected: isTrialSelected,
+                                    isEnabled: canSelectServerTrial,
+                                    title: language.text(trialTitleKey),
+                                    subtitle: language.text("paywall.trial.subtitle"),
+                                    badge: language.text("paywall.badge.trial"),
+                                    message: purchases.isTrialPending
+                                        ? language.text("paywall.trial.wait.message")
+                                        : nil,
+                                    onSelect: {
+                                        selectedProductID = PurchaseStore.ProductID.trialSevenDays
+                                    }
+                                )
+                            }
                         }
                         .transition(.opacity.combined(with: .move(edge: .top)))
                     }
@@ -214,9 +283,15 @@ struct PaywallView: View {
     private var actions: some View {
         VStack(spacing: 12) {
             Button {
-                guard let selectedProduct else { return }
                 Task {
-                    await purchases.purchase(selectedProduct)
+                    if isTrialSelected && canSelectServerTrial {
+                        let status = await purchases.requestTrial(userId: model.userId)
+                        if status?.status == "pending" {
+                            showsTrialWaitAlert = true
+                        }
+                    } else if let selectedProduct {
+                        await purchases.purchase(selectedProduct)
+                    }
                 }
             } label: {
                 HStack {
@@ -230,7 +305,11 @@ struct PaywallView: View {
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
-            .disabled(selectedProduct == nil || purchases.isPurchasing || purchases.isRestoring)
+            .disabled(
+                (selectedProduct == nil && (!isTrialSelected || !canSelectServerTrial))
+                    || purchases.isPurchasing
+                    || purchases.isRestoring
+            )
 
             Button {
                 Task {
@@ -252,11 +331,21 @@ struct PaywallView: View {
             Link(language.text("paywall.terms_privacy"), destination: PurchaseStore.privacyAndTermsURL)
                 .font(.footnote)
         }
+        .alert(language.text("paywall.trial.wait.title"), isPresented: $showsTrialWaitAlert) {
+            Button(language.text("action.ok"), role: .cancel) {}
+        } message: {
+            Text(language.text("paywall.trial.wait.message"))
+        }
     }
 
     private var primaryActionTitle: String {
+        if isTrialSelected {
+            return language.text("paywall.trial.cta")
+        }
         guard let selectedProduct else {
-            return language.text("paywall.enroll.cta_trial")
+            return purchases.isTrialActive
+                ? language.text("paywall.subscribe")
+                : language.text("paywall.enroll.cta_trial")
         }
 
         if selectedProduct.id == PurchaseStore.ProductID.lifetimeUnlock {
@@ -264,9 +353,17 @@ struct PaywallView: View {
         }
 
         if selectedProduct.id == PurchaseStore.ProductID.proYear {
+            if purchases.isTrialActive {
+                return language.text("paywall.enroll.cta_subscribe")
+            }
+
             return purchases.isIntroOfferEligible(for: selectedProduct)
                 ? language.text("paywall.enroll.cta_trial")
                 : language.text("paywall.enroll.cta_subscribe")
+        }
+
+        if purchases.isTrialActive {
+            return language.text("paywall.subscribe")
         }
 
         if purchases.isIntroOfferEligible(for: selectedProduct) {
@@ -292,7 +389,7 @@ struct PaywallView: View {
     private func subtitle(for product: Product) -> String {
         switch product.id {
         case PurchaseStore.ProductID.proYear:
-            if purchases.isIntroOfferEligible(for: product) {
+            if !purchases.isTrialActive && purchases.isIntroOfferEligible(for: product) {
                 return String(format: language.text("paywall.product.pro_year.trial_subtitle"), product.displayPrice)
             }
             return String(format: language.text("paywall.product.pro_year.subtitle"), product.displayPrice)
@@ -368,7 +465,7 @@ struct PaywallView: View {
     private func badge(for product: Product) -> String? {
         switch product.id {
         case PurchaseStore.ProductID.proYear:
-            return purchases.isIntroOfferEligible(for: product)
+            return !purchases.isTrialActive && purchases.isIntroOfferEligible(for: product)
                 ? language.text("paywall.badge.trial")
                 : language.text("paywall.badge.best_value")
         case PurchaseStore.ProductID.lifetimeUnlock:
@@ -626,6 +723,71 @@ private struct PaywallFeatureRow: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+        }
+    }
+}
+
+private struct TrialPlanCard: View {
+    let isSelected: Bool
+    let isEnabled: Bool
+    let title: String
+    let subtitle: String
+    let badge: String
+    let message: String?
+    let onSelect: () -> Void
+
+    private var showsSelectedState: Bool {
+        isSelected && isEnabled
+    }
+
+    var body: some View {
+        Button(action: onSelect) {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: showsSelectedState ? "checkmark.circle.fill" : "circle")
+                    .font(.title3)
+                    .foregroundStyle(showsSelectedState ? .green : .secondary)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 8) {
+                        Text(title)
+                            .font(.headline)
+                            .foregroundStyle(.primary)
+
+                        Text(badge)
+                            .font(.caption.bold())
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(.green.opacity(0.14), in: Capsule())
+                            .foregroundStyle(.green)
+                    }
+
+                    Text(subtitle)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    if let message {
+                        Text(message)
+                            .font(.footnote)
+                            .foregroundStyle(.orange)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+
+                Spacer(minLength: 8)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!isEnabled)
+        .padding(14)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 8))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(
+                    showsSelectedState ? Color.green : Color(.separator),
+                    lineWidth: showsSelectedState ? 2 : 1
+                )
         }
     }
 }

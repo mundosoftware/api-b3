@@ -109,7 +109,10 @@ final class AppLanguage: ObservableObject {
         "status.none": [.pt: "Nenhum plano ativo", .en: "No active plan"],
         "status.legacy": [.pt: "Você tem acesso legado da compra anterior.", .en: "You have legacy access from the previous purchase."],
         "status.active_summary": [.pt: "Ativo: %@", .en: "Active: %@"],
+        "status.trial_days_left": [.pt: "Teste grátis: %d dias restantes", .en: "Free trial: %d days left"],
+        "status.trial_day_left": [.pt: "Teste grátis: 1 dia restante", .en: "Free trial: 1 day left"],
         "action.allow_notifications": [.pt: "Permitir notificações", .en: "Allow Notifications"],
+        "action.cancel": [.pt: "Cancelar", .en: "Cancel"],
         "action.not_now": [.pt: "Agora não", .en: "Not Now"],
         "action.ok": [.pt: "OK", .en: "OK"],
         "action.done": [.pt: "Concluído", .en: "Done"],
@@ -138,8 +141,8 @@ final class AppLanguage: ObservableObject {
         ],
         "paywall.title": [.pt: "Comece seu teste grátis", .en: "Start your free trial"],
         "paywall.subtitle": [
-            .pt: "Para usar o Trade Alert, escolha um plano e ative o acesso Pro. O plano anual inclui 7 dias grátis quando você for elegível.",
-            .en: "To use Trade Alert, choose a plan and activate Pro access. The yearly plan includes 7 days free when you are eligible."
+            .pt: "Para usar o Trade Alert, escolha um plano Pro, adquira a versão Vitalícia ou escolha o teste gratuito de 7 dias. O plano anual tem o melhor custo benefício.",
+            .en: "To use Trade Alert, choose the Pro access plan, the Lifetime version or choose the 7-day free trial. The yearly plan has the best value."
         ],
         "paywall.loading": [.pt: "Carregando ofertas...", .en: "Loading offers..."],
         "paywall.checking_access": [.pt: "Verificando seu acesso...", .en: "Checking your access..."],
@@ -149,12 +152,27 @@ final class AppLanguage: ObservableObject {
         "paywall.buy_lifetime": [.pt: "Comprar acesso vitalício", .en: "Buy Lifetime Access"],
         "paywall.restore": [.pt: "Restaurar compras", .en: "Restore Purchases"],
         "paywall.terms_privacy": [.pt: "Termos de Uso/Privacidade", .en: "Terms of Use/Privacy"],
-        "paywall.enroll.title": [.pt: "Pro Anual com teste grátis", .en: "Pro Yearly with free trial"],
+        "paywall.enroll.title": [.pt: "Pro Anual", .en: "Pro Yearly"],
         "paywall.enroll.cta_trial": [.pt: "Começar 7 dias grátis", .en: "Start 7 Days Free"],
         "paywall.enroll.cta_subscribe": [.pt: "Assinar Pro Anual", .en: "Subscribe to Pro Yearly"],
         "paywall.other_plans.show": [.pt: "Ver outros planos", .en: "View Other Plans"],
         "paywall.other_plans.hide": [.pt: "Ocultar outros planos", .en: "Hide Other Plans"],
         "paywall.other_plans.title": [.pt: "Outros planos", .en: "Other Plans"],
+        "paywall.trial.title": [.pt: "Teste gratuito de 7 dias", .en: "7-Day Free Trial"],
+        "paywall.trial.ended.title": [.pt: "Solicitar novo teste de 7 dias", .en: "Request Another 7-Day Trial"],
+        "paywall.trial.active.paywall_title": [.pt: "Seu teste grátis está ativo", .en: "Your free trial is active"],
+        "paywall.trial.pending.paywall_title": [.pt: "Solicitação de teste em andamento", .en: "Trial request in progress"],
+        "paywall.trial.ended.paywall_title": [.pt: "Seu teste terminou", .en: "Your trial has ended"],
+        "paywall.trial.subtitle": [.pt: "Acesso completo por 7 dias, ativado pelo servidor.", .en: "Full access for 7 days."],
+        "paywall.trial.cta": [.pt: "Solicitar teste de 7 dias", .en: "Request 7-Day Trial"],
+        "paywall.trial.one_day.title": [.pt: "Seu teste termina amanhã", .en: "Your trial ends tomorrow"],
+        "paywall.trial.one_day.message": [
+            .pt: "Você tem 1 dia grátis restante. Escolha um plano para manter o acesso.",
+            .en: "You have 1 free day left. Choose a plan to keep access."
+        ],
+        "paywall.trial.one_day.cta": [.pt: "Ver planos", .en: "View Plans"],
+        "paywall.trial.wait.title": [.pt: "Teste solicitado", .en: "Trial requested"],
+        "paywall.trial.wait.message": [.pt: "Seu pedido foi recebido. Aguarde a ativação do novo teste de 7 dias e volte mais tarde.", .en: "Your request was received. Please wait for the new 7-day trial to be activated and get back later."],
         "paywall.pro_year_unavailable.title": [
             .pt: "Plano anual indisponível",
             .en: "Yearly plan unavailable"

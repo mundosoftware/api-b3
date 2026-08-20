@@ -1,13 +1,157 @@
 import tempfile
 import unittest
+from datetime import UTC, datetime, timedelta
 
 from src.config import Settings
+
 from src.database import init_db
 from src.models import IAPTelemetryEventCreateRequest
 from src.repositories import Repository
 
 
 class IAPTelemetryTest(unittest.TestCase):
+    def test_server_trial_lifecycle_and_extension_telemetry(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            settings = Settings(database_path=f"{tmpdir}/app.db", check_loop_enabled=False)
+            init_db(settings)
+            repository = Repository(settings)
+            started_at = datetime(2026, 8, 20, tzinfo=UTC)
+
+            first = repository.request_iap_trial("user-a", started_at)
+            self.assertEqual(first["product_id"], "trial_7_days")
+            self.assertEqual(first["status"], "active")
+            self.assertEqual(first["request_count"], 1)
+            self.assertEqual(first["current_time"], started_at.isoformat())
+            self.assertEqual(first["elapsed_days"], 0)
+            self.assertEqual(first["remaining_days"], 7)
+            self.assertEqual(first["remaining_seconds"], 7 * 86400)
+            self.assertEqual(first["total_trial_days"], 7)
+
+            expired_at = started_at + timedelta(days=7)
+            expired = repository.get_iap_trial("user-a", expired_at)
+            self.assertEqual(expired["status"], "expired")
+            self.assertTrue(expired["can_request"])
+            self.assertEqual(expired["elapsed_days"], 7)
+            self.assertEqual(expired["remaining_days"], 0)
+            self.assertEqual(expired["remaining_seconds"], 0)
+
+            extension = repository.request_iap_trial("user-a", expired_at)
+            self.assertEqual(extension["status"], "pending")
+            self.assertFalse(extension["can_request"])
+            asks = repository.list_iap_telemetry_events(
+                product_id="trial_7_days",
+                event_type="trial_extension_requested",
+            )
+            self.assertEqual(len(asks), 1)
+
+    def test_lists_iap_trials_with_elapsed_and_remaining_days(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            settings = Settings(database_path=f"{tmpdir}/app.db", check_loop_enabled=False)
+            init_db(settings)
+            repository = Repository(settings)
+            started_at = datetime(2026, 8, 20, tzinfo=UTC)
+
+            repository.request_iap_trial("user-a", started_at)
+            trials = repository.list_iap_trials(
+                user_id="user-a",
+                status="active",
+                now=started_at + timedelta(days=2),
+            )
+
+            self.assertEqual(len(trials), 1)
+            trial = trials[0]
+            self.assertEqual(trial["user_id"], "user-a")
+            self.assertEqual(trial["status"], "active")
+            self.assertEqual(
+                trial["current_time"], (started_at + timedelta(days=2)).isoformat()
+            )
+            self.assertEqual(trial["elapsed_days"], 2)
+            self.assertEqual(trial["remaining_days"], 5)
+            self.assertEqual(trial["remaining_seconds"], 5 * 86400)
+            self.assertEqual(trial["total_trial_days"], 7)
+
+    def test_adjusts_iap_trial_period_and_records_telemetry(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            settings = Settings(database_path=f"{tmpdir}/app.db", check_loop_enabled=False)
+            init_db(settings)
+            repository = Repository(settings)
+            started_at = datetime(2026, 8, 20, tzinfo=UTC)
+            adjusted_at = started_at + timedelta(days=2)
+
+            repository.request_iap_trial("user-a", started_at)
+
+            extended = repository.adjust_iap_trial_period(
+                "user-a",
+                days=3,
+                reason="support_extension",
+                now=adjusted_at,
+            )
+
+            self.assertEqual(extended["status"], "active")
+            self.assertEqual(extended["adjustment_days"], 3)
+            self.assertEqual(
+                extended["previous_ends_at"],
+                (started_at + timedelta(days=7)).isoformat(),
+            )
+            self.assertEqual(
+                extended["new_ends_at"],
+                (started_at + timedelta(days=10)).isoformat(),
+            )
+            self.assertFalse(extended["ended"])
+            self.assertEqual(extended["remaining_days"], 8)
+            self.assertEqual(extended["remaining_seconds"], 8 * 86400)
+            self.assertEqual(extended["total_trial_days"], 10)
+
+            deducted = repository.adjust_iap_trial_period(
+                "user-a",
+                days=-2,
+                reason="support_deduction",
+                now=adjusted_at,
+            )
+
+            self.assertEqual(deducted["status"], "active")
+            self.assertEqual(deducted["adjustment_days"], -2)
+            self.assertFalse(deducted["ended"])
+            self.assertEqual(
+                deducted["new_ends_at"],
+                (started_at + timedelta(days=8)).isoformat(),
+            )
+            self.assertEqual(deducted["remaining_days"], 6)
+            self.assertEqual(deducted["remaining_seconds"], 6 * 86400)
+
+            ended = repository.adjust_iap_trial_period(
+                "user-a",
+                days=-10,
+                reason="support_end",
+                now=adjusted_at,
+            )
+
+            self.assertEqual(ended["status"], "expired")
+            self.assertTrue(ended["ended"])
+            self.assertEqual(ended["new_ends_at"], adjusted_at.isoformat())
+            self.assertEqual(ended["remaining_days"], 0)
+            self.assertEqual(ended["remaining_seconds"], 0)
+
+            extension_events = repository.list_iap_telemetry_events(
+                product_id="trial_7_days",
+                event_type="trial_period_extended",
+            )
+            deduction_events = repository.list_iap_telemetry_events(
+                product_id="trial_7_days",
+                event_type="trial_period_deducted",
+            )
+            ended_events = repository.list_iap_telemetry_events(
+                product_id="trial_7_days",
+                event_type="trial_ended_by_deduction",
+            )
+
+            self.assertEqual(extension_events[0]["reason"], "support_extension")
+            self.assertEqual(extension_events[0]["trial_days"], 3)
+            self.assertEqual(deduction_events[0]["reason"], "support_deduction")
+            self.assertEqual(deduction_events[0]["trial_days"], 2)
+            self.assertEqual(ended_events[0]["reason"], "support_end")
+            self.assertEqual(ended_events[0]["trial_days"], 10)
+
     def test_records_and_filters_iap_telemetry_events(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             settings = Settings(database_path=f"{tmpdir}/app.db", check_loop_enabled=False)

@@ -189,6 +189,225 @@
           "response": []
         },
         {
+          "name": "Request a server-owned seven-day trial",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{API_BASE}}/users/{{USER_ID}}/iap/trial",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "users",
+                "{{USER_ID}}",
+                "iap",
+                "trial"
+              ]
+            },
+            "description": "Request the first seven-day trial or submit an extension request after expiry."
+          },
+          "response": []
+        },
+        {
+          "name": "List seven-day trial extension asks",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Admin-Token",
+                "value": "{{ADMIN_TOKEN}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{API_BASE}}/admin/telemetry/iap-trial-extension-asks?user_id={{USER_ID}}&limit=50",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "admin",
+                "telemetry",
+                "iap-trial-extension-asks"
+              ],
+              "query": [
+                {
+                  "key": "user_id",
+                  "value": "{{USER_ID}}"
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            },
+            "description": "List server telemetry for requests to extend an expired seven-day trial."
+          },
+          "response": []
+        },
+        {
+          "name": "List current server-owned trials with current time, elapsed days and remaining days",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Admin-Token",
+                "value": "{{ADMIN_TOKEN}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{API_BASE}}/admin/telemetry/iap-trials?status=active&limit=50",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "admin",
+                "telemetry",
+                "iap-trials"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "active"
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            },
+            "description": "Generated from docs/telemetry-curls.md: List current server-owned trials with current time, elapsed days and remaining days."
+          },
+          "response": []
+        },
+        {
+          "name": "List one user's server-owned trial",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Admin-Token",
+                "value": "{{ADMIN_TOKEN}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{API_BASE}}/admin/telemetry/iap-trials?user_id={{USER_ID}}&limit=50",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "admin",
+                "telemetry",
+                "iap-trials"
+              ],
+              "query": [
+                {
+                  "key": "user_id",
+                  "value": "{{USER_ID}}"
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            },
+            "description": "Generated from docs/telemetry-curls.md: List one user's server-owned trial."
+          },
+          "response": []
+        },
+        {
+          "name": "Extend a server-owned trial by three days",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Admin-Token",
+                "value": "{{ADMIN_TOKEN}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{API_BASE}}/admin/telemetry/iap-trials/{{USER_ID}}/adjust",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "admin",
+                "telemetry",
+                "iap-trials",
+                "{{USER_ID}}",
+                "adjust"
+              ]
+            },
+            "description": "Generated from docs/telemetry-curls.md: Extend a server-owned trial by three days.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"days\": 3, \"reason\": \"support_extension\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Deduct days from a server-owned trial",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Admin-Token",
+                "value": "{{ADMIN_TOKEN}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{API_BASE}}/admin/telemetry/iap-trials/{{USER_ID}}/adjust",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "admin",
+                "telemetry",
+                "iap-trials",
+                "{{USER_ID}}",
+                "adjust"
+              ]
+            },
+            "description": "Generated from docs/telemetry-curls.md: Deduct days from a server-owned trial. If the deduction is greater than the remaining time, the server ends the trial immediately.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"days\": -10, \"reason\": \"manual_deduction\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
           "name": "List IAP and subscription telemetry",
           "request": {
             "method": "GET",

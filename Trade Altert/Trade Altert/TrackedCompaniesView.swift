@@ -58,6 +58,7 @@ struct TrackedCompaniesView: View {
 }
 
 struct PurchasePlansSheetView: View {
+    @EnvironmentObject private var model: CompanionAppModel
     @EnvironmentObject private var purchases: PurchaseStore
     @EnvironmentObject private var language: AppLanguage
     @Environment(\.dismiss) private var dismiss
@@ -82,7 +83,7 @@ struct PurchasePlansSheetView: View {
         }
         .background(Color(.systemGroupedBackground))
         .task {
-            await purchases.load()
+            await purchases.load(userId: model.userId)
         }
     }
 }

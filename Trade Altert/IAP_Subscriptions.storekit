@@ -38,7 +38,7 @@
     "_developerTeamID" : "DHC2S9CU89",
     "_disableDialogs" : false,
     "_failTransactionsEnabled" : false,
-    "_lastSynchronizedDate" : 808667946.97775805,
+    "_lastSynchronizedDate" : 808923541.57561302,
     "_locale" : "pt_BR",
     "_renewalBillingIssuesEnabled" : false,
     "_storefront" : "BRA",
@@ -100,16 +100,7 @@
         },
         {
           "adHocOffers" : [
-            {
-              "billingPlanType" : "BILLED_UPFRONT",
-              "displayPrice" : "24.9",
-              "internalID" : "E83C8053",
-              "numberOfPeriods" : 1,
-              "offerID" : "start_promo",
-              "paymentMode" : "payUpFront",
-              "referenceName" : "Start",
-              "subscriptionPeriod" : "P1Y"
-            }
+
           ],
           "billingPlans" : [
             {
@@ -127,21 +118,8 @@
           "familyShareable" : false,
           "groupNumber" : 2,
           "internalID" : "6802283324",
-          "introductoryOffer" : {
-            "billingPlanType" : "BILLED_UPFRONT",
-            "internalID" : "38D1A60C",
-            "numberOfPeriods" : 1,
-            "paymentMode" : "free",
-            "subscriptionPeriod" : "P1W"
-          },
           "introductoryOffers" : [
-            {
-              "billingPlanType" : "BILLED_UPFRONT",
-              "internalID" : "38D1A60C",
-              "numberOfPeriods" : 1,
-              "paymentMode" : "free",
-              "subscriptionPeriod" : "P1W"
-            }
+
           ],
           "localizations" : [
             {

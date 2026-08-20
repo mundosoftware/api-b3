@@ -245,3 +245,89 @@ struct DeviceRegistrationResponse: Decodable {
 }
 
 struct EmptyResponse: Decodable {}
+
+struct IAPTrialStatus: Decodable {
+    let productId: String
+    let status: String
+    let startsAt: String?
+    let endsAt: String?
+    let nextAvailableAt: String?
+    let requestCount: Int
+    let canRequest: Bool
+    let currentTime: String?
+    let elapsedDays: Int?
+    let remainingDays: Int?
+    let remainingSeconds: Int?
+    let totalTrialDays: Int?
+    let message: String?
+
+    var isActive: Bool {
+        status == "active"
+    }
+
+    var isPending: Bool {
+        status == "pending"
+    }
+
+    var daysLeft: Int {
+        if let remainingDays {
+            return max(0, remainingDays)
+        }
+
+        guard let endsAt, let endDate = Self.date(from: endsAt) else {
+            return 0
+        }
+
+        let seconds = max(0, endDate.timeIntervalSinceNow)
+        return Int(ceil(seconds / 86_400))
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case productId = "product_id"
+        case status
+        case startsAt = "starts_at"
+        case endsAt = "ends_at"
+        case nextAvailableAt = "next_available_at"
+        case requestCount = "request_count"
+        case canRequest = "can_request"
+        case currentTime = "current_time"
+        case elapsedDays = "elapsed_days"
+        case remainingDays = "remaining_days"
+        case remainingSeconds = "remaining_seconds"
+        case totalTrialDays = "total_trial_days"
+        case message
+    }
+
+    private static let isoDateFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
+
+    private static let fractionalISODateFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+
+    private static func date(from value: String) -> Date? {
+        isoDateFormatter.date(from: value) ?? fractionalISODateFormatter.date(from: value)
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        productId = try container.decode(String.self, forKey: .productId)
+        status = try container.decode(String.self, forKey: .status)
+        startsAt = try container.decodeIfPresent(String.self, forKey: .startsAt)
+        endsAt = try container.decodeIfPresent(String.self, forKey: .endsAt)
+        nextAvailableAt = try container.decodeIfPresent(String.self, forKey: .nextAvailableAt)
+        requestCount = try container.decode(Int.self, forKey: .requestCount)
+        canRequest = try container.decode(Bool.self, forKey: .canRequest)
+        currentTime = try container.decodeIfPresent(String.self, forKey: .currentTime)
+        elapsedDays = try container.decodeIfPresent(Int.self, forKey: .elapsedDays)
+        remainingDays = try container.decodeIfPresent(Int.self, forKey: .remainingDays)
+        remainingSeconds = try container.decodeIfPresent(Int.self, forKey: .remainingSeconds)
+        totalTrialDays = try container.decodeIfPresent(Int.self, forKey: .totalTrialDays)
+        message = try container.decodeIfPresent(String.self, forKey: .message)
+    }
+}

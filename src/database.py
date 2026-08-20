@@ -234,6 +234,22 @@ def init_db(settings: Settings | None = None) -> None:
                 ON iap_telemetry_events(product_id, created_at DESC);
             CREATE INDEX IF NOT EXISTS idx_iap_telemetry_type_created
                 ON iap_telemetry_events(event_type, created_at DESC);
+
+            CREATE TABLE IF NOT EXISTS iap_trials (
+                user_id TEXT PRIMARY KEY REFERENCES users(user_id) ON DELETE CASCADE,
+                product_id TEXT NOT NULL DEFAULT 'trial_7_days',
+                status TEXT NOT NULL CHECK(status IN ('active', 'expired', 'pending')),
+                starts_at TEXT,
+                ends_at TEXT,
+                next_available_at TEXT,
+                request_count INTEGER NOT NULL DEFAULT 0,
+                last_requested_at TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_iap_trials_status
+                ON iap_trials(status, next_available_at);
             """
         )
         _ensure_column(db, "user_devices", "device_model", "TEXT")

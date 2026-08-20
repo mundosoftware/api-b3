@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from src.config import Settings, get_settings
-from src.database import Database, normalize_ticker, utc_now_iso
+from src.database import Database, normalize_ticker, parse_iso, utc_now_iso
 from src.models import (
     AlertRuleCreateRequest,
     AlertRuleOut,
@@ -127,6 +127,9 @@ IAP_INACTIVE_STATUSES = (
     "refunded",
     "unverified",
 )
+IAP_TRIAL_PRODUCT_ID = "trial_7_days"
+IAP_TRIAL_DAYS = 7
+IAP_TRIAL_REACTIVATION_DELAY = timedelta(hours=24)
 
 
 class Repository:
@@ -158,6 +161,341 @@ class Repository:
         with self.database.connect() as db:
             row = db.execute("SELECT * FROM users WHERE user_id = ?", (user_id,)).fetchone()
             return dict(row) if row else None
+
+    def get_iap_trial(self, user_id: str, now: datetime | None = None) -> dict[str, Any]:
+        checked_at = self._coerce_utc(now or datetime.now(UTC)).replace(microsecond=0)
+        self.upsert_user(user_id)
+        with self.database.connect() as db:
+            row = db.execute("SELECT * FROM iap_trials WHERE user_id = ?", (user_id,)).fetchone()
+            if row is None:
+                return self._trial_response(None, checked_at)
+
+            trial = self._normalize_iap_trial_status(db, dict(row), checked_at)
+            return self._trial_response(trial, checked_at)
+
+    def request_iap_trial(self, user_id: str, now: datetime | None = None) -> dict[str, Any]:
+        requested_at = self._coerce_utc(now or datetime.now(UTC)).replace(microsecond=0)
+        current = self.get_iap_trial(user_id, requested_at)
+        if current["status"] in {"active", "pending"}:
+            return current
+
+        if current["request_count"] == 0:
+            starts_at = requested_at
+            ends_at = starts_at + timedelta(days=IAP_TRIAL_DAYS)
+            trial_status = "active"
+            next_available_at = None
+            message = "Trial activated."
+        else:
+            starts_at = None
+            ends_at = None
+            trial_status = "pending"
+            next_available_at = requested_at + IAP_TRIAL_REACTIVATION_DELAY
+            message = "Trial extension request received; wait for activation."
+
+        with self.database.connect() as db:
+            db.execute(
+                """
+                INSERT INTO iap_trials(
+                    user_id, product_id, status, starts_at, ends_at,
+                    next_available_at, request_count, last_requested_at,
+                    created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(user_id) DO UPDATE SET
+                    status = excluded.status,
+                    starts_at = excluded.starts_at,
+                    ends_at = excluded.ends_at,
+                    next_available_at = excluded.next_available_at,
+                    request_count = excluded.request_count,
+                    last_requested_at = excluded.last_requested_at,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    user_id,
+                    IAP_TRIAL_PRODUCT_ID,
+                    trial_status,
+                    starts_at.isoformat() if starts_at else None,
+                    ends_at.isoformat() if ends_at else None,
+                    next_available_at.isoformat() if next_available_at else None,
+                    current["request_count"] + 1,
+                    requested_at.isoformat(),
+                    requested_at.isoformat(),
+                    requested_at.isoformat(),
+                ),
+            )
+
+        self.record_iap_telemetry_event(
+            user_id,
+            IAPTelemetryEventCreateRequest(
+                event_type=(
+                    "trial_started"
+                    if trial_status == "active"
+                    else "trial_extension_requested"
+                ),
+                product_id=IAP_TRIAL_PRODUCT_ID,
+                product_type="server_trial",
+                trial_days=IAP_TRIAL_DAYS,
+                status=trial_status,
+                message=message,
+                platform="ios",
+                occurred_at=requested_at.isoformat(),
+            ),
+        )
+        response = self.get_iap_trial(user_id, requested_at)
+        response["message"] = message
+        return response
+
+    def list_iap_trials(
+        self,
+        limit: int = 100,
+        user_id: str | None = None,
+        status: str | None = None,
+        now: datetime | None = None,
+    ) -> list[dict[str, Any]]:
+        limit = max(1, min(limit, 500))
+        checked_at = self._coerce_utc(now or datetime.now(UTC)).replace(microsecond=0)
+        conditions: list[str] = []
+        params: list[Any] = []
+        if user_id:
+            conditions.append("user_id = ?")
+            params.append(user_id)
+        where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+
+        result: list[dict[str, Any]] = []
+        with self.database.connect() as db:
+            rows = db.execute(
+                f"""
+                SELECT *
+                FROM iap_trials
+                {where}
+                ORDER BY updated_at DESC, user_id
+                LIMIT 1000
+                """,
+                params,
+            ).fetchall()
+            for row in rows:
+                trial = self._normalize_iap_trial_status(db, dict(row), checked_at)
+                if status and trial["status"] != status:
+                    continue
+                result.append(self._trial_response(trial, checked_at, include_user=True))
+                if len(result) >= limit:
+                    break
+        return result
+
+    def adjust_iap_trial_period(
+        self,
+        user_id: str,
+        days: int,
+        reason: str | None = None,
+        now: datetime | None = None,
+    ) -> dict[str, Any]:
+        if days == 0:
+            raise ValueError("days must not be zero")
+
+        checked_at = self._coerce_utc(now or datetime.now(UTC)).replace(microsecond=0)
+
+        with self.database.connect() as db:
+            row = db.execute("SELECT * FROM iap_trials WHERE user_id = ?", (user_id,)).fetchone()
+            if row is None:
+                raise ValueError("trial not found")
+
+            trial = self._normalize_iap_trial_status(db, dict(row), checked_at)
+            previous_ends_at = trial["ends_at"]
+            starts_at = parse_iso(trial["starts_at"]) or checked_at
+            ends_at = parse_iso(trial["ends_at"])
+            status = trial["status"]
+            ended = False
+
+            if days > 0:
+                if status == "active" and ends_at and ends_at > checked_at:
+                    new_ends_at = ends_at + timedelta(days=days)
+                else:
+                    new_ends_at = checked_at + timedelta(days=days)
+                    if not trial["starts_at"]:
+                        starts_at = checked_at
+                status = "active"
+                event_type = "trial_period_extended"
+            else:
+                if status != "active" or not ends_at or ends_at <= checked_at:
+                    new_ends_at = checked_at
+                    status = "expired"
+                    ended = True
+                else:
+                    new_ends_at = ends_at + timedelta(days=days)
+                    if new_ends_at <= checked_at:
+                        new_ends_at = checked_at
+                        status = "expired"
+                        ended = True
+                    else:
+                        status = "active"
+                event_type = "trial_ended_by_deduction" if ended else "trial_period_deducted"
+
+            db.execute(
+                """
+                UPDATE iap_trials
+                SET status = ?, starts_at = ?, ends_at = ?, next_available_at = NULL, updated_at = ?
+                WHERE user_id = ?
+                """,
+                (
+                    status,
+                    starts_at.replace(microsecond=0).isoformat(),
+                    new_ends_at.replace(microsecond=0).isoformat(),
+                    checked_at.isoformat(),
+                    user_id,
+                ),
+            )
+            row = db.execute("SELECT * FROM iap_trials WHERE user_id = ?", (user_id,)).fetchone()
+            adjusted = dict(row)
+
+        message = (
+            f"Adjusted server trial by {days} day(s)."
+            if not ended
+            else f"Server trial ended after deducting {abs(days)} day(s)."
+        )
+        self.record_iap_telemetry_event(
+            user_id,
+            IAPTelemetryEventCreateRequest(
+                event_type=event_type,
+                product_id=IAP_TRIAL_PRODUCT_ID,
+                product_type="server_trial",
+                trial_days=abs(days),
+                status=status,
+                reason=reason or "admin_adjustment",
+                message=message,
+                platform="admin",
+                occurred_at=checked_at.isoformat(),
+            ),
+        )
+
+        response = self._trial_response(adjusted, checked_at, include_user=True)
+        response.update(
+            adjustment_days=days,
+            previous_ends_at=previous_ends_at,
+            new_ends_at=adjusted["ends_at"],
+            ended=ended,
+            message=message,
+        )
+        return response
+
+    def _normalize_iap_trial_status(
+        self, db: sqlite3.Connection, trial: dict[str, Any], checked_at: datetime
+    ) -> dict[str, Any]:
+        if trial["status"] == "active" and trial["ends_at"]:
+            ends_at = parse_iso(trial["ends_at"])
+            if ends_at and checked_at >= self._coerce_utc(ends_at):
+                db.execute(
+                    "UPDATE iap_trials SET status = 'expired', updated_at = ? WHERE user_id = ?",
+                    (checked_at.isoformat(), trial["user_id"]),
+                )
+                trial["status"] = "expired"
+                trial["updated_at"] = checked_at.isoformat()
+        elif trial["status"] == "pending" and trial["next_available_at"]:
+            next_available_at = parse_iso(trial["next_available_at"])
+            if next_available_at and checked_at >= self._coerce_utc(next_available_at):
+                starts_at = checked_at
+                ends_at = starts_at + timedelta(days=IAP_TRIAL_DAYS)
+                db.execute(
+                    """
+                    UPDATE iap_trials
+                    SET status = 'active', starts_at = ?, ends_at = ?,
+                        next_available_at = NULL, updated_at = ?
+                    WHERE user_id = ?
+                    """,
+                    (
+                        starts_at.isoformat(),
+                        ends_at.isoformat(),
+                        starts_at.isoformat(),
+                        trial["user_id"],
+                    ),
+                )
+                trial.update(
+                    status="active",
+                    starts_at=starts_at.isoformat(),
+                    ends_at=ends_at.isoformat(),
+                    next_available_at=None,
+                    updated_at=starts_at.isoformat(),
+                )
+        return trial
+
+    def _trial_response(
+        self,
+        trial: dict[str, Any] | None,
+        checked_at: datetime | None = None,
+        include_user: bool = False,
+    ) -> dict[str, Any]:
+        checked_at = self._coerce_utc(checked_at or datetime.now(UTC)).replace(microsecond=0)
+        if trial is None:
+            response = {
+                "product_id": IAP_TRIAL_PRODUCT_ID,
+                "status": "expired",
+                "starts_at": None,
+                "ends_at": None,
+                "next_available_at": None,
+                "request_count": 0,
+                "can_request": True,
+                "current_time": checked_at.isoformat(),
+                "elapsed_days": 0,
+                "remaining_days": 0,
+                "remaining_seconds": 0,
+                "total_trial_days": IAP_TRIAL_DAYS,
+                "message": None,
+            }
+            if include_user:
+                response.update(
+                    user_id="",
+                    last_requested_at=None,
+                    created_at=None,
+                    updated_at=None,
+                )
+            return response
+        status = trial["status"]
+        starts_at = parse_iso(trial["starts_at"])
+        ends_at = parse_iso(trial["ends_at"])
+        elapsed_seconds = 0
+        remaining_seconds = 0
+        total_seconds = IAP_TRIAL_DAYS * 86400
+        if starts_at:
+            starts_at = self._coerce_utc(starts_at)
+            elapsed_until = min(
+                checked_at,
+                self._coerce_utc(ends_at) if ends_at else checked_at,
+            )
+            elapsed_seconds = max(0, int((elapsed_until - starts_at).total_seconds()))
+        if ends_at:
+            ends_at = self._coerce_utc(ends_at)
+            if starts_at:
+                total_seconds = max(0, int((ends_at - starts_at).total_seconds()))
+            if status == "active":
+                remaining_seconds = max(0, int((ends_at - checked_at).total_seconds()))
+
+        response = {
+            "product_id": trial["product_id"],
+            "status": status,
+            "starts_at": trial["starts_at"],
+            "ends_at": trial["ends_at"],
+            "next_available_at": trial["next_available_at"],
+            "request_count": trial["request_count"],
+            "can_request": status == "expired",
+            "current_time": checked_at.isoformat(),
+            "elapsed_days": elapsed_seconds // 86400,
+            "remaining_days": (remaining_seconds + 86399) // 86400,
+            "remaining_seconds": remaining_seconds,
+            "total_trial_days": (total_seconds + 86399) // 86400,
+            "message": None,
+        }
+        if include_user:
+            response.update(
+                user_id=trial["user_id"],
+                last_requested_at=trial["last_requested_at"],
+                created_at=trial["created_at"],
+                updated_at=trial["updated_at"],
+            )
+        return response
+
+    def _coerce_utc(self, value: datetime) -> datetime:
+        if value.tzinfo is None:
+            return value.replace(tzinfo=UTC)
+        return value.astimezone(UTC)
 
     def list_companies(self, query: str | None = None, limit: int = 50) -> list[dict[str, Any]]:
         query = (query or "").strip().upper()

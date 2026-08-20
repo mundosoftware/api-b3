@@ -42,6 +42,14 @@ actor CompanionAPIClient {
         )
     }
 
+    func iapTrial(userId: String) async throws -> IAPTrialStatus {
+        try await send("/users/\(userId)/iap/trial")
+    }
+
+    func requestIAPTrial(userId: String) async throws -> IAPTrialStatus {
+        try await send("/users/\(userId)/iap/trial", method: "POST", body: EmptyBody())
+    }
+
     func notificationPreferences(userId: String) async throws -> NotificationPreferences {
         try await send("/users/\(userId)/notification-preferences")
     }

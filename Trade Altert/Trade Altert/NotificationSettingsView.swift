@@ -61,15 +61,9 @@ struct NotificationSettingsView: View {
                     }
                 }
 
-                if purchases.purchasedProductIDs.isEmpty && !purchases.legacyPaidAccess {
-                    Text(language.text("status.none"))
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                } else {
-                    Text(activePlanSummary())
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
+                Text(activePlanSummary())
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
 
                 Button {
                     showPlansSheet = true
@@ -109,7 +103,7 @@ struct NotificationSettingsView: View {
                 .interactiveDismissDisabled(false)
         }
         .task {
-            await purchases.load()
+            await purchases.load(userId: model.userId)
         }
     }
 
@@ -149,6 +143,14 @@ struct NotificationSettingsView: View {
     private func activePlanSummary() -> String {
         if purchases.legacyPaidAccess {
             return language.text("status.legacy")
+        }
+
+        if purchases.isTrialActive {
+            let daysLeft = purchases.trialDaysLeft
+            if daysLeft == 1 {
+                return language.text("status.trial_day_left")
+            }
+            return String(format: language.text("status.trial_days_left"), daysLeft)
         }
 
         let activeProducts = purchases.products.filter { product in

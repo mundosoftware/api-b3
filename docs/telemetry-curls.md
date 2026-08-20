@@ -12,6 +12,8 @@ Replace these placeholders:
 - `{{TICKER}}`: ticker to inspect.
 - `{{PRODUCT_ID}}`: StoreKit product id, for example `pro_year`, `pro_month`, or `lifetime_unlock`.
 
+The server-owned trial product id is `trial_7_days`.
+
 Record a paywall view from the app:
 
 ```bash
@@ -99,6 +101,52 @@ curl --request POST "{{API_BASE}}/users/{{USER_ID}}/iap/telemetry" \
     "platform": "ios",
     "environment": "production"
   }'
+```
+
+Request a server-owned seven-day trial or an extension after expiry:
+
+```bash
+curl --request POST "{{API_BASE}}/users/{{USER_ID}}/iap/trial" \
+  --header "Content-Type: application/json"
+```
+
+List asks to extend an expired seven-day trial:
+
+```bash
+curl --request GET "{{API_BASE}}/admin/telemetry/iap-trial-extension-asks?user_id={{USER_ID}}&limit=50" \
+  --header "X-Admin-Token: {{ADMIN_TOKEN}}"
+```
+
+List current server-owned trials with current time, elapsed days and remaining days:
+
+```bash
+curl --request GET "{{API_BASE}}/admin/telemetry/iap-trials?status=active&limit=50" \
+  --header "X-Admin-Token: {{ADMIN_TOKEN}}"
+```
+
+List one user's server-owned trial:
+
+```bash
+curl --request GET "{{API_BASE}}/admin/telemetry/iap-trials?user_id={{USER_ID}}&limit=50" \
+  --header "X-Admin-Token: {{ADMIN_TOKEN}}"
+```
+
+Extend a server-owned trial by three days:
+
+```bash
+curl --request POST "{{API_BASE}}/admin/telemetry/iap-trials/{{USER_ID}}/adjust" \
+  --header "X-Admin-Token: {{ADMIN_TOKEN}}" \
+  --header "Content-Type: application/json" \
+  --data '{"days": 3, "reason": "support_extension"}'
+```
+
+Deduct days from a server-owned trial. If the deduction is greater than the remaining time, the server ends the trial immediately:
+
+```bash
+curl --request POST "{{API_BASE}}/admin/telemetry/iap-trials/{{USER_ID}}/adjust" \
+  --header "X-Admin-Token: {{ADMIN_TOKEN}}" \
+  --header "Content-Type: application/json" \
+  --data '{"days": -10, "reason": "manual_deduction"}'
 ```
 
 List IAP and subscription telemetry:
