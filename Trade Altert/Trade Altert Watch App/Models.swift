@@ -205,3 +205,17 @@ struct AlertRuleUpdateRequest: Encodable {
 struct AlertRuleEnabledUpdateRequest: Encodable {
     let enabled: Bool
 }
+
+struct IAPTrialStatus: Decodable {
+    let status: String
+    let remainingDays: Int?
+
+    var isActive: Bool {
+        status == "active"
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case status
+        case remainingDays = "remaining_days"
+    }
+}

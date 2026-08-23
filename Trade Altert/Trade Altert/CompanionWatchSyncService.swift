@@ -6,6 +6,7 @@ final class CompanionWatchSyncService: NSObject, WCSessionDelegate {
 
     private weak var model: CompanionAppModel?
     private var session: WCSession?
+    private let dateFormatter = ISO8601DateFormatter()
 
     private override init() {}
 
@@ -22,9 +23,38 @@ final class CompanionWatchSyncService: NSObject, WCSessionDelegate {
     }
 
     func sendUserId(_ userId: String) {
+        sendAccessState(
+            userId: userId,
+            hasAccess: nil,
+            paidAccess: nil,
+            paidAccessExpiresAt: nil,
+            trialDaysLeft: nil
+        )
+    }
+
+    func sendAccessState(
+        userId: String,
+        hasAccess: Bool?,
+        paidAccess: Bool?,
+        paidAccessExpiresAt: Date?,
+        trialDaysLeft: Int?
+    ) {
         guard let session else { return }
+        var context: [String: Any] = ["user_id": userId]
+        if let hasAccess {
+            context["has_access"] = hasAccess
+        }
+        if let paidAccess {
+            context["paid_access"] = paidAccess
+        }
+        if let paidAccessExpiresAt {
+            context["paid_access_expires_at"] = dateFormatter.string(from: paidAccessExpiresAt)
+        }
+        if let trialDaysLeft {
+            context["trial_days_left"] = trialDaysLeft
+        }
         do {
-            try session.updateApplicationContext(["user_id": userId])
+            try session.updateApplicationContext(context)
         } catch {
             print("WatchConnectivity user sync failed: \(error.localizedDescription)")
         }
@@ -47,6 +77,21 @@ final class CompanionWatchSyncService: NSObject, WCSessionDelegate {
         guard let userId = applicationContext["user_id"] as? String else { return }
         Task { @MainActor in
             self.model?.adoptUserIdFromWatch(userId)
+        }
+    }
+
+    func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
+        handleWatchMessage(message)
+    }
+
+    func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any]) {
+        handleWatchMessage(userInfo)
+    }
+
+    private func handleWatchMessage(_ message: [String: Any]) {
+        guard message["action"] as? String == "show_paywall" else { return }
+        Task { @MainActor in
+            self.model?.requestPurchasePlansFromWatch()
         }
     }
 

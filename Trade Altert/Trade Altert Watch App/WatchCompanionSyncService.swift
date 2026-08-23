@@ -30,6 +30,18 @@ final class WatchCompanionSyncService: NSObject, WCSessionDelegate {
         }
     }
 
+    func requestPurchaseOnPhone() {
+        guard let session else { return }
+        let payload = ["action": "show_paywall"]
+        if session.isReachable {
+            session.sendMessage(payload, replyHandler: nil) { error in
+                print("WatchConnectivity paywall request failed: \(error.localizedDescription)")
+            }
+        } else {
+            session.transferUserInfo(payload)
+        }
+    }
+
     func session(
         _ session: WCSession,
         activationDidCompleteWith activationState: WCSessionActivationState,
@@ -46,9 +58,11 @@ final class WatchCompanionSyncService: NSObject, WCSessionDelegate {
     }
 
     func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {
-        guard let userId = applicationContext["user_id"] as? String else { return }
         Task { @MainActor in
-            self.model?.adoptUserIdFromCompanion(userId)
+            if let userId = applicationContext["user_id"] as? String {
+                self.model?.adoptUserIdFromCompanion(userId)
+            }
+            self.model?.applyCompanionAccessContext(applicationContext)
         }
     }
 }

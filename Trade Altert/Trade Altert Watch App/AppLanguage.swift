@@ -90,6 +90,12 @@ final class AppLanguage: ObservableObject {
         "title.edit_alert": [.pt: "Editar alerta", .en: "Edit Alert"],
         "title.search": [.pt: "Buscar", .en: "Search"],
         "title.error": [.pt: "Erro", .en: "Error"],
+        "watch.access.title": [.pt: "Acesso necessário", .en: "Access required"],
+        "watch.access.message": [
+            .pt: "Abra o Trade Alert no iPhone para assinar ou comprar uma versão.",
+            .en: "Open Trade Alert on iPhone to subscribe or buy access."
+        ],
+        "watch.access.cta": [.pt: "Abrir no iPhone", .en: "Open on iPhone"],
         "empty.no_tickers": [.pt: "Nenhum ticker", .en: "No tickers"],
         "metric.price": [.pt: "Preço", .en: "Price"],
         "metric.percent": [.pt: "Percentual", .en: "Percent"],

@@ -85,6 +85,10 @@ actor APIClient {
         try await sendNoContent("/users/\(userId)/alerts/\(alertId)", method: "DELETE")
     }
 
+    func iapTrial(userId: String) async throws -> IAPTrialStatus {
+        try await send("/users/\(userId)/iap/trial")
+    }
+
     private func send<T: Decodable>(_ path: String, method: String = "GET") async throws -> T {
         let request = try makeRequest(path: path, method: method, body: Optional<EmptyBody>.none)
         return try await decode(request)

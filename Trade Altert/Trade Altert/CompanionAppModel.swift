@@ -11,6 +11,7 @@ final class CompanionAppModel: ObservableObject {
     @Published private(set) var preferences: NotificationPreferences?
     @Published var isLoading = false
     @Published var errorMessage: String?
+    @Published var shouldShowPurchasePlansFromWatch = false
 
     @Published private(set) var userId: String
 
@@ -147,6 +148,10 @@ final class CompanionAppModel: ObservableObject {
                 try await self.registerIOSDeviceIfEnabled()
             }
         }
+    }
+
+    func requestPurchasePlansFromWatch() {
+        shouldShowPurchasePlansFromWatch = true
     }
 
     func adoptUserIdFromWatch(_ watchUserId: String) {

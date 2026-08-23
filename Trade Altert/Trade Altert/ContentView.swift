@@ -29,18 +29,34 @@ struct ContentView: View {
             }
         }
         .task {
+            CompanionWatchSyncService.shared.start(model: model)
             await purchases.load(userId: model.userId)
+            syncWatchAccessState()
             refreshTrialEndingAlert()
         }
         .task(id: purchases.hasAccess) {
+            syncWatchAccessState()
             guard purchases.hasAccess, !didBootstrap else { return }
             await model.bootstrap()
             didBootstrap = true
+            syncWatchAccessState()
             refreshOneSignalIntegrationAlert()
             refreshTrialEndingAlert()
         }
         .onChange(of: purchases.trialStatus?.remainingDays) { _, _ in
+            syncWatchAccessState()
             refreshTrialEndingAlert()
+        }
+        .onChange(of: purchases.purchasedProductIDs) { _, _ in
+            syncWatchAccessState()
+        }
+        .onChange(of: purchases.paidAccessExpiresAt) { _, _ in
+            syncWatchAccessState()
+        }
+        .onChange(of: model.shouldShowPurchasePlansFromWatch) { _, shouldShow in
+            guard shouldShow else { return }
+            showTrialPlansSheet = true
+            model.shouldShowPurchasePlansFromWatch = false
         }
         .onChange(of: model.iosNotificationsEnabled) { _, _ in
             guard purchases.hasAccess else { return }
@@ -137,6 +153,16 @@ struct ContentView: View {
 
         didShowTrialEndingAlert = true
         showTrialEndingAlert = true
+    }
+
+    private func syncWatchAccessState() {
+        CompanionWatchSyncService.shared.sendAccessState(
+            userId: model.userId,
+            hasAccess: purchases.hasAccess,
+            paidAccess: purchases.hasPaidAccess,
+            paidAccessExpiresAt: purchases.paidAccessExpiresAt,
+            trialDaysLeft: purchases.isTrialActive ? purchases.trialDaysLeft : nil
+        )
     }
 
     @MainActor

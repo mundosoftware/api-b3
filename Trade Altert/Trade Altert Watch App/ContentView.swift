@@ -6,35 +6,43 @@ struct ContentView: View {
 
     var body: some View {
         NavigationStack {
-            List {
-                NavigationLink {
-                    SearchView()
-                } label: {
-                    Label(language.text("tab.search"), systemImage: "magnifyingglass")
-                }
-
-                NavigationLink {
-                    WatchSettingsView()
-                } label: {
-                    Label(language.text("tab.settings"), systemImage: "gearshape")
-                }
-
-                Section(language.text("section.tracked")) {
-                    if model.favorites.isEmpty {
-                        Text(language.text("empty.no_tickers"))
-                            .foregroundStyle(.secondary)
-                    } else {
-                        ForEach(model.favorites) { favorite in
-                            NavigationLink {
-                                CompanyDetailView(company: favorite.company)
-                            } label: {
-                                CompanyRow(company: favorite.company)
-                            }
+            Group {
+                if !model.accessCheckCompleted && !model.hasAccess {
+                    ProgressView()
+                } else if !model.hasAccess {
+                    WatchAccessBlockedView()
+                } else {
+                    List {
+                        NavigationLink {
+                            SearchView()
+                        } label: {
+                            Label(language.text("tab.search"), systemImage: "magnifyingglass")
                         }
-                        .onDelete { indexSet in
-                            for index in indexSet {
-                                let ticker = model.favorites[index].ticker
-                                Task { await model.removeFavorite(ticker) }
+
+                        NavigationLink {
+                            WatchSettingsView()
+                        } label: {
+                            Label(language.text("tab.settings"), systemImage: "gearshape")
+                        }
+
+                        Section(language.text("section.tracked")) {
+                            if model.favorites.isEmpty {
+                                Text(language.text("empty.no_tickers"))
+                                    .foregroundStyle(.secondary)
+                            } else {
+                                ForEach(model.favorites) { favorite in
+                                    NavigationLink {
+                                        CompanyDetailView(company: favorite.company)
+                                    } label: {
+                                        CompanyRow(company: favorite.company)
+                                    }
+                                }
+                                .onDelete { indexSet in
+                                    for index in indexSet {
+                                        let ticker = model.favorites[index].ticker
+                                        Task { await model.removeFavorite(ticker) }
+                                    }
+                                }
                             }
                         }
                     }
@@ -44,7 +52,7 @@ struct ContentView: View {
             .toolbar {
                 if model.isLoading {
                     ProgressView()
-                } else {
+                } else if model.hasAccess {
                     Button {
                         Task {
                             await model.refreshTrackedCompanies()
@@ -56,7 +64,9 @@ struct ContentView: View {
                 }
             }
             .refreshable {
-                await model.refreshTrackedCompanies()
+                if model.hasAccess {
+                    await model.refreshTrackedCompanies()
+                }
             }
             .alert(language.text("title.error"), isPresented: Binding(
                 get: { model.errorMessage != nil },
@@ -67,6 +77,34 @@ struct ContentView: View {
                 Text(model.errorMessage ?? "")
             }
         }
+    }
+}
+
+struct WatchAccessBlockedView: View {
+    @EnvironmentObject private var model: AppModel
+    @EnvironmentObject private var language: AppLanguage
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "iphone")
+                .font(.title2)
+                .foregroundStyle(.green)
+
+            Text(language.text("watch.access.title"))
+                .font(.headline)
+                .multilineTextAlignment(.center)
+
+            Text(language.text("watch.access.message"))
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+
+            Button(language.text("watch.access.cta")) {
+                model.requestPurchaseOnPhone()
+            }
+            .buttonStyle(.borderedProminent)
+        }
+        .padding()
     }
 }
 

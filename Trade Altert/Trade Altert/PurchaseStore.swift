@@ -32,6 +32,7 @@ final class PurchaseStore: ObservableObject {
     @Published private(set) var products: [Product] = []
     @Published private(set) var trialStatus: IAPTrialStatus?
     @Published private(set) var purchasedProductIDs: Set<String> = []
+    @Published private(set) var paidAccessExpiresAt: Date?
     @Published private(set) var introOfferEligibleProductIDs: Set<String> = []
     @Published private(set) var hasAccess = false
     @Published private(set) var hasResolvedAccess = false
@@ -59,6 +60,10 @@ final class PurchaseStore: ObservableObject {
 
     var isTrialActive: Bool {
         trialStatus?.isActive == true
+    }
+
+    var hasPaidAccess: Bool {
+        legacyPaidAccess || !purchasedProductIDs.isEmpty
     }
 
     var isTrialPending: Bool {
@@ -169,6 +174,8 @@ final class PurchaseStore: ObservableObject {
 
     private func refreshPurchasedProducts() async {
         var activeProductIDs = Set<String>()
+        var latestSubscriptionExpiration: Date?
+        var hasNonExpiringAccess = false
 
         for await result in Transaction.currentEntitlements {
             guard case .verified(let transaction) = result else { continue }
@@ -178,11 +185,17 @@ final class PurchaseStore: ObservableObject {
             guard !transaction.isUpgraded else { continue }
 
             activeProductIDs.insert(transaction.productID)
+            if let expirationDate = transaction.expirationDate {
+                latestSubscriptionExpiration = max(latestSubscriptionExpiration ?? expirationDate, expirationDate)
+            } else {
+                hasNonExpiringAccess = true
+            }
         }
 
         let hasLegacyAccess = await hasLegacyPaidAppAccess()
         purchasedProductIDs = activeProductIDs
         legacyPaidAccess = hasLegacyAccess
+        paidAccessExpiresAt = hasLegacyAccess || hasNonExpiringAccess ? nil : latestSubscriptionExpiration
         updateHasAccess()
     }
 
