@@ -54,6 +54,10 @@ actor CompanionAPIClient {
         try await send("/users/\(userId)/notification-preferences")
     }
 
+    func aiOutlookFeatureStatus() async throws -> AIOutlookFeatureStatus {
+        try await send("/features/ai-outlook")
+    }
+
     func updateNotificationPreferences(
         userId: String,
         iosEnabled: Bool?,

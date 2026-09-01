@@ -1,14 +1,16 @@
-# B3 Watch API
+# Trade Alert
 
-FastAPI backend plus a SwiftUI watchOS client for tracking B3 tickers, saving favorites, configuring price/percentage alerts, and receiving OneSignal push notifications.
+FastAPI backend plus SwiftUI iOS/watchOS clients for tracking B3 tickers, saving favorites, configuring price/percentage alerts, receiving OneSignal push notifications, and using AI Outlook decision support.
 
 ## What Changed
 
 - Added a SQLite-backed API for users, watch devices, companies, favorites, alert rules, and notification logs.
 - Added a lightweight alert scheduler that fetches each due ticker once per cycle and evaluates every user rule that depends on that ticker.
 - Added OneSignal server integration for standalone watchOS APNs token registration and user-targeted push delivery.
+- Added AI Outlook candle analysis and decision support using Yahoo chart candles, Kronos-compatible forecasting, cached prediction results, and support/resistance visual data for the native iOS app.
+- Added per-user AI Outlook activation plus a global admin feature flag, maintenance state, FTUE disclosure, telemetry visibility, and localized PT-BR/EN iOS copy.
 - Added a `watchos/B3TickerWatch` SwiftUI source tree for ticker search, favorites, alert creation, and watch push registration.
-- Added `scripts/deploy_vps.sh` for one-command VPS deployment over SSH.
+- Added `scripts/run_ai_local.sh` for local AI Outlook validation and updated `scripts/deploy_vps.sh` for one-command VPS deployment with Kronos runtime setup.
 - Kept the legacy `/get-ticker/{ticker}`, `/get-tickers`, and `/get-stocks-by-order/{order}` routes.
 
 ## Backend
@@ -38,12 +40,29 @@ Important env vars:
 - `ADMIN_TOKEN`: required header value for `POST /admin/run-checks` when set.
 - `CHECK_LOOP_SECONDS`: background scheduler interval.
 - `QUOTE_CACHE_TTL_SECONDS`: quote cache age before a live refresh.
+- `AI_OUTLOOK_GLOBAL_ENABLED`: initial global AI Outlook availability seeded into the database.
+- `CANDLE_CACHE_TTL_SECONDS`: Yahoo chart candle cache age.
+- `PREDICTION_CACHE_TTL_SECONDS`: AI Outlook prediction cache age.
+- `KRONOS_ENABLED`: enables Kronos-backed forecasting when its source/dependencies are available.
+- `KRONOS_REQUIRED`: fails AI Outlook requests instead of falling back when Kronos cannot run.
+- `KRONOS_INSTALL`: deploy script option to clone/update Kronos on the VPS.
+- `KRONOS_REPO_PATH`: local Kronos checkout path, defaulted by deploy scripts when omitted.
+- `KRONOS_MODEL_NAME`: default `NeoQuasar/Kronos-base`.
+- `KRONOS_TOKENIZER_NAME`: default `NeoQuasar/Kronos-Tokenizer-base`.
+- `KRONOS_MAX_CONTEXT`, `KRONOS_SAMPLE_COUNT`, `KRONOS_TEMPERATURE`, `KRONOS_TOP_P`, `KRONOS_DEVICE`: Kronos inference controls.
+- `KRONOS_CACHE_DIR`, `HF_HOME`, `TORCH_HOME`: model/cache locations for VPS deployment.
 
 Main endpoints:
 
+- `GET /health`
+- `GET /features/ai-outlook`
 - `GET /companies/search?q=PETR&limit=25`
 - `GET /companies/{ticker}?refresh=true`
+- `GET /companies/{ticker}/candles?range=6mo&interval=1d`
+- `GET /companies/{ticker}/ai-analysis?horizon=10&range=6mo&refresh=true`
 - `PUT /users/{user_id}`
+- `GET /users/{user_id}/notification-preferences`
+- `PUT /users/{user_id}/notification-preferences`
 - `POST /users/{user_id}/devices/watchos`
 - `POST /users/{user_id}/devices/ios`
 - `POST /users/{user_id}/devices/{ios|watchos}/unregister`
@@ -55,6 +74,8 @@ Main endpoints:
 - `PATCH /users/{user_id}/alerts/{alert_id}`
 - `DELETE /users/{user_id}/alerts/{alert_id}`
 - `POST /admin/run-checks`
+- `GET /admin/features/ai-outlook`
+- `PUT /admin/features/ai-outlook`
 - `GET /admin/telemetry/alert-status`
 - `GET /admin/telemetry/alert-runs`
 - `GET /admin/telemetry/alert-events`
@@ -66,6 +87,40 @@ When OneSignal/APNs reports stale push subscriptions during alert delivery, the 
 
 Telemetry endpoints require the same `X-Admin-Token` as `POST /admin/run-checks`. cURL examples are in `docs/telemetry-curls.md`.
 
+## AI Outlook
+
+AI Outlook is off for each user by default. The iOS app shows the benefits, Kronos paper/source links, and a centered text CTA that can activate or deactivate the feature for that user. First activation presents a disclosure that AI output can be wrong, market data can be stale, and the result is decision support rather than investment advice. When the global admin flag is disabled, the app shows the AI Outlook maintenance UI and the backend returns the public feature state from `GET /features/ai-outlook`.
+
+The backend fetches free Yahoo chart candles, caches candle and prediction results in SQLite, runs Kronos when configured, and returns a decision-support payload with direction, confidence, suggested action, support/resistance, target/risk prices, forecast candles, warning text, and chart-ready historical/forecast series. If Kronos is unavailable and `KRONOS_REQUIRED=false`, the service uses the statistical fallback so the UI and local tests still work.
+
+Local AI validation:
+
+```bash
+./scripts/run_ai_local.sh --install-kronos
+```
+
+Useful options:
+
+- `--no-start`: install, test, and initialize the database without starting Uvicorn.
+- `--skip-tests`: skip the unit test run.
+- `--ticker PETR4`: change the smoke-test ticker shown after startup.
+- `--host 127.0.0.1 --port 8000`: change the local bind address.
+
+The script installs `requirements.txt`, optionally installs `requirements-ai.txt`, clones or updates Kronos under `.deps/Kronos`, initializes `database/local-ai.db`, and starts `uvicorn main:app --reload`.
+
+Admin control:
+
+```bash
+curl --request PUT "$API_BASE/admin/features/ai-outlook" \
+  --header "X-Admin-Token: $ADMIN_TOKEN" \
+  --header "Content-Type: application/json" \
+  --data '{"enabled": false}'
+```
+
+The global flag controls availability for every user. Per-user activation remains stored as `ai_outlook_enabled` in notification preferences and appears in admin telemetry/device reports.
+
+The Postman collection in `docs/telemetry-postman-collection.json` includes `/health`, public AI Outlook availability, admin enable/disable calls, and user preference telemetry for `ai_outlook_enabled`.
+
 Alert rules support:
 
 - `metric`: `price` or `percent`
@@ -75,6 +130,14 @@ Alert rules support:
 - `start_time` and `end_time`: `HH:MM`
 - `frequency_minutes`: minimum interval between checks for that rule
 - `cooldown_minutes`: minimum interval between repeated notifications
+
+## iOS
+
+The native iOS app source is under `Trade Altert/Trade Altert`.
+
+AI Outlook appears in the company detail screen. It loads the global feature flag, keeps user activation off by default through `ai_outlook_enabled`, shows the activation benefits and Kronos research/source links, displays the FTUE disclosure on first activation, shows loading states while fetching or changing the day range, and renders historical/forecast candle support data from `/companies/{ticker}/ai-analysis`. If the admin disables AI Outlook globally, the section switches to the maintenance UI.
+
+Set `AppConfig.apiBaseURL` to the deployed VPS URL, for example `https://203.0.113.10`.
 
 ## watchOS
 
@@ -98,6 +161,8 @@ sudo bash scripts/deploy_vps.sh vps
 ```
 
 The script installs system packages, syncs the project, creates a Python venv, writes the remote `local.env`, installs a systemd service with one Uvicorn worker, and starts the API behind nginx when `PUBLIC_SERVER_PORT` differs from `SERVER_PORT` or HTTPS is enabled.
+
+When `KRONOS_INSTALL=true`, the deploy script also installs `requirements-ai.txt`, clones or updates Kronos at `${APP_DIR}/.deps/Kronos`, creates Hugging Face/Torch cache directories under `${APP_DIR}/.cache/kronos` by default, and writes the AI Outlook/Kronos env vars into the remote `local.env`. The initial `AI_OUTLOOK_GLOBAL_ENABLED` value seeds the database; later admin changes are persisted through `/admin/features/ai-outlook`.
 
 For Oracle Cloud, keep the Python API private on `SERVER_PORT=8000`, expose nginx on `HTTP_SERVER_PORT=80` for certificate validation, and expose HTTPS on `HTTPS_SERVER_PORT=443`. With that setup, the public API URL is `https://<VPS_HOST>` and the health URL is `https://<VPS_HOST>/health`; do not use `:8000` unless Oracle ingress also allows port 8000.
 

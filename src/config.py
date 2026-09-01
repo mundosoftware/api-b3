@@ -19,6 +19,7 @@ class Settings(BaseModel):
     check_loop_seconds: int = 30
     check_loop_enabled: bool = True
     default_timezone: str = "America/Sao_Paulo"
+    ai_outlook_global_enabled: bool = True
     kronos_enabled: bool = True
     kronos_required: bool = False
     kronos_repo_path: str | None = None
@@ -74,6 +75,10 @@ class Settings(BaseModel):
             ),
             check_loop_enabled=env_bool("CHECK_LOOP_ENABLED", cls.model_fields["check_loop_enabled"].default),
             default_timezone=os.getenv("DEFAULT_TIMEZONE", cls.model_fields["default_timezone"].default),
+            ai_outlook_global_enabled=env_bool(
+                "AI_OUTLOOK_GLOBAL_ENABLED",
+                cls.model_fields["ai_outlook_global_enabled"].default,
+            ),
             kronos_enabled=env_bool("KRONOS_ENABLED", cls.model_fields["kronos_enabled"].default),
             kronos_required=env_bool("KRONOS_REQUIRED", cls.model_fields["kronos_required"].default),
             kronos_repo_path=os.getenv("KRONOS_REPO_PATH") or None,

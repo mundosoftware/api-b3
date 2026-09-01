@@ -6,6 +6,154 @@
   },
   "item": [
     {
+      "name": "Operational Health",
+      "item": [
+        {
+          "name": "Check API health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{API_BASE}}/health",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "description": "Generated from docs/telemetry-curls.md: Check API health before validating telemetry flows."
+          },
+          "response": []
+        },
+        {
+          "name": "Read public AI Outlook availability",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{API_BASE}}/features/ai-outlook",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "features",
+                "ai-outlook"
+              ]
+            },
+            "description": "Generated from docs/telemetry-curls.md: Read public AI Outlook availability used by the iOS maintenance UI."
+          },
+          "response": []
+        },
+        {
+          "name": "Read admin AI Outlook feature flag",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Admin-Token",
+                "value": "{{ADMIN_TOKEN}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{API_BASE}}/admin/features/ai-outlook",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "admin",
+                "features",
+                "ai-outlook"
+              ]
+            },
+            "description": "Generated from docs/telemetry-curls.md: Read the admin AI Outlook feature flag."
+          },
+          "response": []
+        },
+        {
+          "name": "Disable AI Outlook globally",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "X-Admin-Token",
+                "value": "{{ADMIN_TOKEN}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{API_BASE}}/admin/features/ai-outlook",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "admin",
+                "features",
+                "ai-outlook"
+              ]
+            },
+            "description": "Disable AI Outlook globally for maintenance. Existing user activation preferences remain saved.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"enabled\": false\n  }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Enable AI Outlook globally",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "X-Admin-Token",
+                "value": "{{ADMIN_TOKEN}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{API_BASE}}/admin/features/ai-outlook",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "admin",
+                "features",
+                "ai-outlook"
+              ]
+            },
+            "description": "Enable AI Outlook globally after maintenance.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"enabled\": true\n  }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
       "name": "IAP and Subscription Telemetry",
       "item": [
         {

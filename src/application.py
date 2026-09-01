@@ -30,6 +30,8 @@ from src.models import (
     DeviceRegistrationRequest,
     DeviceUnregisterOut,
     DeviceUnregisterRequest,
+    FeatureFlagOut,
+    FeatureFlagUpdateRequest,
     FavoriteCreateRequest,
     FavoriteListOut,
     FavoriteOut,
@@ -94,13 +96,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/health")
     async def health() -> dict[str, object]:
+        ai_outlook_enabled = repository.ai_outlook_feature_enabled()
         return {
             "status": "ok",
             "onesignal_configured": onesignal.configured,
             "onesignal_ios_configured": onesignal.ios_configured,
             "onesignal_watchos_configured": onesignal.watchos_configured,
             "check_loop_enabled": settings.check_loop_enabled,
+            "ai_outlook_global_enabled": ai_outlook_enabled,
+            "kronos_enabled": settings.kronos_enabled,
         }
+
+    @app.get("/features/ai-outlook", response_model=FeatureFlagOut)
+    async def get_ai_outlook_feature() -> FeatureFlagOut:
+        return FeatureFlagOut(
+            **repository.get_feature_flag(
+                "ai_outlook",
+                settings.ai_outlook_global_enabled,
+            )
+        )
 
     @app.get("/companies/search", response_model=CompanyListOut)
     async def search_companies(
@@ -155,6 +169,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         horizon: int = Query(default=10, ge=1, le=60),
         refresh: bool = Query(default=False),
     ) -> DecisionSupportOut:
+        if not repository.ai_outlook_feature_enabled():
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="AI Outlook is temporarily unavailable",
+            )
         try:
             analysis = await run_in_threadpool(
                 decision_support.analysis,
@@ -353,6 +372,32 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def run_checks(x_admin_token: str | None = Header(default=None)) -> RunChecksOut:
         require_admin(x_admin_token)
         return await run_in_threadpool(alert_engine.run_due_checks)
+
+    @app.get("/admin/features/ai-outlook", response_model=FeatureFlagOut)
+    async def admin_get_ai_outlook_feature(
+        x_admin_token: str | None = Header(default=None),
+    ) -> FeatureFlagOut:
+        require_admin(x_admin_token)
+        return FeatureFlagOut(
+            **repository.get_feature_flag(
+                "ai_outlook",
+                settings.ai_outlook_global_enabled,
+            )
+        )
+
+    @app.put("/admin/features/ai-outlook", response_model=FeatureFlagOut)
+    async def admin_update_ai_outlook_feature(
+        request: FeatureFlagUpdateRequest,
+        x_admin_token: str | None = Header(default=None),
+    ) -> FeatureFlagOut:
+        require_admin(x_admin_token)
+        return FeatureFlagOut(
+            **repository.update_feature_flag(
+                "ai_outlook",
+                request.enabled,
+                updated_by="admin",
+            )
+        )
 
     @app.get("/admin/telemetry/alert-status", response_model=AlertTelemetryStatusListOut)
     async def telemetry_alert_status(

@@ -123,6 +123,20 @@ struct DecisionSupportAnalysis: Codable {
     }
 }
 
+struct AIOutlookFeatureStatus: Codable {
+    let name: String
+    let enabled: Bool
+    let updatedAt: String
+    let updatedBy: String?
+
+    enum CodingKeys: String, CodingKey {
+        case name
+        case enabled
+        case updatedAt = "updated_at"
+        case updatedBy = "updated_by"
+    }
+}
+
 struct Favorite: Codable, Identifiable {
     var id: String { ticker }
     let ticker: String

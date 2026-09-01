@@ -43,6 +43,15 @@ def candle_from_row(row: sqlite3.Row) -> dict[str, Any]:
     }
 
 
+def feature_flag_from_row(row: sqlite3.Row) -> dict[str, Any]:
+    return {
+        "name": row["name"],
+        "enabled": bool(row["enabled"]),
+        "updated_at": row["updated_at"],
+        "updated_by": row["updated_by"],
+    }
+
+
 def alert_from_row(row: sqlite3.Row) -> AlertRuleOut:
     weekdays = [int(day) for day in row["weekdays"].split(",") if day]
     return AlertRuleOut(
@@ -178,6 +187,52 @@ class Repository:
         with self.database.connect() as db:
             row = db.execute("SELECT * FROM users WHERE user_id = ?", (user_id,)).fetchone()
             return dict(row) if row else None
+
+    def get_feature_flag(self, name: str, default_enabled: bool = True) -> dict[str, Any]:
+        now = utc_now_iso()
+        with self.database.connect() as db:
+            self._ensure_feature_flag(db, name, default_enabled, now)
+            row = db.execute(
+                """
+                SELECT name, enabled, updated_at, updated_by
+                FROM feature_flags
+                WHERE name = ?
+                """,
+                (name,),
+            ).fetchone()
+            return feature_flag_from_row(row)
+
+    def update_feature_flag(
+        self, name: str, enabled: bool, updated_by: str = "admin"
+    ) -> dict[str, Any]:
+        now = utc_now_iso()
+        with self.database.connect() as db:
+            db.execute(
+                """
+                INSERT INTO feature_flags(name, enabled, updated_at, updated_by)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(name) DO UPDATE SET
+                    enabled = excluded.enabled,
+                    updated_at = excluded.updated_at,
+                    updated_by = excluded.updated_by
+                """,
+                (name, int(enabled), now, updated_by),
+            )
+            row = db.execute(
+                """
+                SELECT name, enabled, updated_at, updated_by
+                FROM feature_flags
+                WHERE name = ?
+                """,
+                (name,),
+            ).fetchone()
+            return feature_flag_from_row(row)
+
+    def ai_outlook_feature_enabled(self) -> bool:
+        return self.get_feature_flag(
+            "ai_outlook",
+            self.settings.ai_outlook_global_enabled,
+        )["enabled"]
 
     def get_iap_trial(self, user_id: str, now: datetime | None = None) -> dict[str, Any]:
         checked_at = self._coerce_utc(now or datetime.now(UTC)).replace(microsecond=0)
@@ -1965,6 +2020,22 @@ class Repository:
             ON CONFLICT(ticker) DO NOTHING
             """,
             (ticker, ticker),
+        )
+
+    def _ensure_feature_flag(
+        self,
+        db: sqlite3.Connection,
+        name: str,
+        default_enabled: bool,
+        now: str,
+    ) -> None:
+        db.execute(
+            """
+            INSERT INTO feature_flags(name, enabled, updated_at, updated_by)
+            VALUES (?, ?, ?, 'system')
+            ON CONFLICT(name) DO NOTHING
+            """,
+            (name, int(default_enabled), now),
         )
 
     def _ensure_notification_preferences(

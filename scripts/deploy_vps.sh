@@ -115,6 +115,21 @@ QUOTE_CACHE_TTL_SECONDS="${QUOTE_CACHE_TTL_SECONDS:-60}"
 CHECK_LOOP_SECONDS="${CHECK_LOOP_SECONDS:-30}"
 CHECK_LOOP_ENABLED="${CHECK_LOOP_ENABLED:-true}"
 ONESIGNAL_ENABLED="${ONESIGNAL_ENABLED:-true}"
+AI_OUTLOOK_GLOBAL_ENABLED="${AI_OUTLOOK_GLOBAL_ENABLED:-true}"
+CANDLE_CACHE_TTL_SECONDS="${CANDLE_CACHE_TTL_SECONDS:-3600}"
+PREDICTION_CACHE_TTL_SECONDS="${PREDICTION_CACHE_TTL_SECONDS:-900}"
+KRONOS_ENABLED="${KRONOS_ENABLED:-true}"
+KRONOS_REQUIRED="${KRONOS_REQUIRED:-false}"
+KRONOS_INSTALL="${KRONOS_INSTALL:-${KRONOS_ENABLED}}"
+KRONOS_REPO_URL="${KRONOS_REPO_URL:-https://github.com/shiyu-coder/Kronos.git}"
+KRONOS_REPO_PATH="${KRONOS_REPO_PATH:-}"
+KRONOS_MODEL_NAME="${KRONOS_MODEL_NAME:-NeoQuasar/Kronos-base}"
+KRONOS_TOKENIZER_NAME="${KRONOS_TOKENIZER_NAME:-NeoQuasar/Kronos-Tokenizer-base}"
+KRONOS_MAX_CONTEXT="${KRONOS_MAX_CONTEXT:-512}"
+KRONOS_SAMPLE_COUNT="${KRONOS_SAMPLE_COUNT:-4}"
+KRONOS_TEMPERATURE="${KRONOS_TEMPERATURE:-1.0}"
+KRONOS_TOP_P="${KRONOS_TOP_P:-0.9}"
+KRONOS_DEVICE="${KRONOS_DEVICE:-}"
 HEALTH_CHECK_RETRIES="${HEALTH_CHECK_RETRIES:-30}"
 HEALTH_CHECK_INTERVAL_SECONDS="${HEALTH_CHECK_INTERVAL_SECONDS:-2}"
 LETSENCRYPT_EMAIL="${LETSENCRYPT_EMAIL:-}"
@@ -414,6 +429,10 @@ SERVICE_BIND_HOST="${SERVER_HOST}"
 if reverse_proxy_enabled && [[ "${SERVER_HOST}" == "0.0.0.0" ]]; then
   SERVICE_BIND_HOST="127.0.0.1"
 fi
+KRONOS_RUNTIME_REPO_PATH="${KRONOS_REPO_PATH:-${APP_DIR}/.deps/Kronos}"
+KRONOS_CACHE_DIR="${KRONOS_CACHE_DIR:-${APP_DIR}/.cache/kronos}"
+HF_HOME="${HF_HOME:-${KRONOS_CACHE_DIR}/huggingface}"
+TORCH_HOME="${TORCH_HOME:-${KRONOS_CACHE_DIR}/torch}"
 
 SSH_TARGET="${VPS_USER}@${VPS_HOST}"
 SSH_ARGS=(-p "${VPS_SSH_PORT}")
@@ -667,8 +686,28 @@ allow_public_ports() {
   done
 }
 
+install_kronos_source() {
+  if ! truthy "${KRONOS_INSTALL}"; then
+    return
+  fi
+
+  echo "Installing Kronos source at ${KRONOS_RUNTIME_REPO_PATH}"
+  remote "mkdir -p '${KRONOS_RUNTIME_REPO_PATH%/*}' '${HF_HOME}' '${TORCH_HOME}'
+if [ -d '${KRONOS_RUNTIME_REPO_PATH}/.git' ]; then
+  git -C '${KRONOS_RUNTIME_REPO_PATH}' pull --ff-only
+elif [ -e '${KRONOS_RUNTIME_REPO_PATH}' ]; then
+  echo '${KRONOS_RUNTIME_REPO_PATH} exists and is not a git checkout' >&2
+  exit 1
+else
+  git clone --depth 1 '${KRONOS_REPO_URL}' '${KRONOS_RUNTIME_REPO_PATH}'
+fi"
+}
+
 echo "Preparing ${SSH_TARGET}:${APP_DIR}"
 REMOTE_PACKAGES="python3 python3-venv python3-pip rsync curl"
+if truthy "${KRONOS_INSTALL}"; then
+  REMOTE_PACKAGES="${REMOTE_PACKAGES} git"
+fi
 if reverse_proxy_enabled; then
   REMOTE_PACKAGES="${REMOTE_PACKAGES} nginx"
 fi
@@ -698,7 +737,10 @@ CLEANUP_FILES+=("${TMP_ENV}")
   write_env_line "SERVER_HOST" "${SERVICE_BIND_HOST}"
   write_env_line "SERVER_PORT" "${SERVER_PORT}"
   write_env_line "DEFAULT_TIMEZONE" "${DEFAULT_TIMEZONE}"
+  write_env_line "AI_OUTLOOK_GLOBAL_ENABLED" "${AI_OUTLOOK_GLOBAL_ENABLED}"
   write_env_line "QUOTE_CACHE_TTL_SECONDS" "${QUOTE_CACHE_TTL_SECONDS}"
+  write_env_line "CANDLE_CACHE_TTL_SECONDS" "${CANDLE_CACHE_TTL_SECONDS}"
+  write_env_line "PREDICTION_CACHE_TTL_SECONDS" "${PREDICTION_CACHE_TTL_SECONDS}"
   write_env_line "CHECK_LOOP_SECONDS" "${CHECK_LOOP_SECONDS}"
   write_env_line "CHECK_LOOP_ENABLED" "${CHECK_LOOP_ENABLED}"
   write_env_line "ONESIGNAL_ENABLED" "${ONESIGNAL_ENABLED}"
@@ -707,12 +749,29 @@ CLEANUP_FILES+=("${TMP_ENV}")
   write_env_line "ONESIGNAL_WATCH_APP_ID" "${ONESIGNAL_WATCH_APP_ID}"
   write_env_line "ONESIGNAL_WATCH_REST_API_KEY" "${ONESIGNAL_WATCH_REST_API_KEY}"
   write_env_line "ADMIN_TOKEN" "${ADMIN_TOKEN}"
+  write_env_line "KRONOS_ENABLED" "${KRONOS_ENABLED}"
+  write_env_line "KRONOS_REQUIRED" "${KRONOS_REQUIRED}"
+  write_env_line "KRONOS_REPO_PATH" "${KRONOS_RUNTIME_REPO_PATH}"
+  write_env_line "KRONOS_MODEL_NAME" "${KRONOS_MODEL_NAME}"
+  write_env_line "KRONOS_TOKENIZER_NAME" "${KRONOS_TOKENIZER_NAME}"
+  write_env_line "KRONOS_MAX_CONTEXT" "${KRONOS_MAX_CONTEXT}"
+  write_env_line "KRONOS_SAMPLE_COUNT" "${KRONOS_SAMPLE_COUNT}"
+  write_env_line "KRONOS_TEMPERATURE" "${KRONOS_TEMPERATURE}"
+  write_env_line "KRONOS_TOP_P" "${KRONOS_TOP_P}"
+  write_env_line "KRONOS_DEVICE" "${KRONOS_DEVICE}"
+  write_env_line "KRONOS_CACHE_DIR" "${KRONOS_CACHE_DIR}"
+  write_env_line "HF_HOME" "${HF_HOME}"
+  write_env_line "TORCH_HOME" "${TORCH_HOME}"
 } > "${TMP_ENV}"
 rsync -az -e "${RSYNC_SSH}" "${TMP_ENV}" "${SSH_TARGET}:${APP_DIR}/local.env"
 remote "chmod 600 '${APP_DIR}/local.env'"
 
 echo "Installing Python dependencies"
 remote "cd '${APP_DIR}' && python3 -m venv venv && ./venv/bin/pip install --upgrade pip && ./venv/bin/pip install -r requirements.txt"
+if truthy "${KRONOS_INSTALL}"; then
+  remote "cd '${APP_DIR}' && ./venv/bin/pip install -r requirements-ai.txt"
+  install_kronos_source
+fi
 
 echo "Installing systemd service"
 remote_sudo "cat > /etc/systemd/system/${SERVICE_NAME}.service <<EOF

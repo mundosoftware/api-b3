@@ -50,6 +50,19 @@ final class AppLanguage: ObservableObject {
         Self.localized[key]?[code] ?? Self.localized[key]?[.en] ?? key
     }
 
+    func aiWarningText(_ warning: String) -> String {
+        switch warning {
+        case "Forecasts are probabilistic and can be wrong.":
+            return text("ai.warning.forecasts_probabilistic")
+        case "This is decision support, not investment advice.":
+            return text("ai.warning.not_investment_advice")
+        case "Yahoo chart data may be delayed or incomplete.":
+            return text("ai.warning.yahoo_data")
+        default:
+            return warning
+        }
+    }
+
     private static func deviceLanguageCode() -> AppLanguageCode {
         let preferredLanguage = Locale.preferredLanguages.first ?? Locale.current.identifier
         let languageCode = Locale(identifier: preferredLanguage).language.languageCode?.identifier
@@ -130,6 +143,11 @@ final class AppLanguage: ObservableObject {
         "ai.loading": [.pt: "Analisando candles...", .en: "Analyzing candles..."],
         "ai.updating": [.pt: "Atualizando análise...", .en: "Updating analysis..."],
         "ai.refresh": [.pt: "Atualizar análise IA", .en: "Refresh AI analysis"],
+        "ai.copy_text": [.pt: "Copiar texto", .en: "Copy text"],
+        "ai.copy_translate_toast": [
+            .pt: "Texto copiado. Cole no seu tradutor favorito para traduzir.",
+            .en: "Text copied. Paste it into your favorite translator app."
+        ],
         "ai.enable.title": [.pt: "Ative previsões com IA", .en: "Enable AI forecasts"],
         "ai.enable.benefit.forecast": [
             .pt: "Veja uma projeção visual dos próximos candles.",
@@ -157,6 +175,11 @@ final class AppLanguage: ObservableObject {
         "ai.disable.loading_cta": [.pt: "Desativando Perspectiva IA...", .en: "Disabling AI Outlook..."],
         "ai.source.paper": [.pt: "Paper científico", .en: "Research paper"],
         "ai.source.code": [.pt: "Código-fonte", .en: "Source code"],
+        "ai.maintenance.title": [.pt: "Perspectiva IA em manutenção", .en: "AI Outlook is under maintenance"],
+        "ai.maintenance.message": [
+            .pt: "O recurso foi pausado temporariamente. Sua ativação fica salva e voltará quando a análise for liberada.",
+            .en: "This feature is temporarily paused. Your activation is saved and will return when analysis is available."
+        ],
         "ai.ftue.title": [.pt: "Antes de usar a Perspectiva IA", .en: "Before Using AI Outlook"],
         "ai.ftue.message": [
             .pt: "As previsões podem estar erradas, os dados da Yahoo podem atrasar ou falhar, e a análise não é recomendação de investimento. Use como apoio, não como decisão automática.",
@@ -170,6 +193,18 @@ final class AppLanguage: ObservableObject {
         "ai.risk": [.pt: "Risco", .en: "Risk"],
         "ai.drivers": [.pt: "Fatores", .en: "Drivers"],
         "ai.warnings": [.pt: "Avisos", .en: "Warnings"],
+        "ai.warning.forecasts_probabilistic": [
+            .pt: "As previsões são probabilísticas e podem estar erradas.",
+            .en: "Forecasts are probabilistic and can be wrong."
+        ],
+        "ai.warning.not_investment_advice": [
+            .pt: "Isto é apoio à decisão, não recomendação de investimento.",
+            .en: "This is decision support, not investment advice."
+        ],
+        "ai.warning.yahoo_data": [
+            .pt: "Os dados de candles do Yahoo podem estar atrasados ou incompletos.",
+            .en: "Yahoo chart data may be delayed or incomplete."
+        ],
         "ai.outlook.bullish": [.pt: "Alta", .en: "Bullish"],
         "ai.outlook.neutral": [.pt: "Neutro", .en: "Neutral"],
         "ai.outlook.bearish": [.pt: "Baixa", .en: "Bearish"],

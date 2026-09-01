@@ -87,6 +87,17 @@ class DecisionSupportOut(BaseModel):
     forecast: list[ForecastCandleOut]
 
 
+class FeatureFlagOut(BaseModel):
+    name: str
+    enabled: bool
+    updated_at: str
+    updated_by: str | None = None
+
+
+class FeatureFlagUpdateRequest(BaseModel):
+    enabled: bool
+
+
 class UserUpsertRequest(BaseModel):
     display_name: str | None = Field(default=None, max_length=80)
     timezone: str | None = Field(default=None, max_length=80)

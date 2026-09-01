@@ -116,6 +116,13 @@ def init_db(settings: Settings | None = None) -> None:
             CREATE INDEX IF NOT EXISTS idx_prediction_cache_expiry
                 ON prediction_cache(expires_at);
 
+            CREATE TABLE IF NOT EXISTS feature_flags (
+                name TEXT PRIMARY KEY,
+                enabled INTEGER NOT NULL,
+                updated_at TEXT NOT NULL,
+                updated_by TEXT
+            );
+
             CREATE TABLE IF NOT EXISTS users (
                 user_id TEXT PRIMARY KEY,
                 display_name TEXT,
@@ -296,6 +303,14 @@ def init_db(settings: Settings | None = None) -> None:
             "INTEGER NOT NULL DEFAULT 0",
         )
         now = utc_now_iso()
+        db.execute(
+            """
+            INSERT INTO feature_flags(name, enabled, updated_at, updated_by)
+            VALUES ('ai_outlook', ?, ?, 'system')
+            ON CONFLICT(name) DO NOTHING
+            """,
+            (int(settings.ai_outlook_global_enabled), now),
+        )
         for company in ticker_catalog():
             db.execute(
                 """

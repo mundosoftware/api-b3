@@ -14,6 +14,43 @@ Replace these placeholders:
 
 The server-owned trial product id is `trial_7_days`.
 
+Check API health:
+
+```bash
+curl --request GET "{{API_BASE}}/health"
+```
+
+Read public AI Outlook availability:
+
+```bash
+curl --request GET "{{API_BASE}}/features/ai-outlook"
+```
+
+Read the admin AI Outlook feature flag:
+
+```bash
+curl --request GET "{{API_BASE}}/admin/features/ai-outlook" \
+  --header "X-Admin-Token: {{ADMIN_TOKEN}}"
+```
+
+Disable AI Outlook globally for maintenance:
+
+```bash
+curl --request PUT "{{API_BASE}}/admin/features/ai-outlook" \
+  --header "X-Admin-Token: {{ADMIN_TOKEN}}" \
+  --header "Content-Type: application/json" \
+  --data '{"enabled": false}'
+```
+
+Enable AI Outlook globally:
+
+```bash
+curl --request PUT "{{API_BASE}}/admin/features/ai-outlook" \
+  --header "X-Admin-Token: {{ADMIN_TOKEN}}" \
+  --header "Content-Type: application/json" \
+  --data '{"enabled": true}'
+```
+
 Record a paywall view from the app:
 
 ```bash

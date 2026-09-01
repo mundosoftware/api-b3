@@ -9,6 +9,7 @@ final class CompanionAppModel: ObservableObject {
     @Published var searchResults: [Company] = []
     @Published var alertsByTicker: [String: [AlertRule]] = [:]
     @Published private(set) var preferences: NotificationPreferences?
+    @Published private(set) var aiOutlookFeatureStatus: AIOutlookFeatureStatus?
     @Published var isLoading = false
     @Published var errorMessage: String?
     @Published var shouldShowPurchasePlansFromWatch = false
@@ -16,6 +17,7 @@ final class CompanionAppModel: ObservableObject {
     @Published private(set) var userId: String
 
     private let api = CompanionAPIClient.shared
+    private var aiAnalysisCache: [AIAnalysisCacheKey: DecisionSupportAnalysis] = [:]
     private var userIdWasGenerated: Bool
 
     var iosNotificationsEnabled: Bool {
@@ -28,6 +30,10 @@ final class CompanionAppModel: ObservableObject {
 
     var aiOutlookEnabled: Bool {
         preferences?.aiOutlookEnabled == true
+    }
+
+    var aiOutlookAvailable: Bool {
+        aiOutlookFeatureStatus?.enabled ?? true
     }
 
     var iosRegistrationStatus: String {
@@ -54,6 +60,7 @@ final class CompanionAppModel: ObservableObject {
         OneSignalService.shared.login(userId: userId)
         await run {
             try await self.api.upsertUser(userId: self.userId, timezone: TimeZone.current.identifier)
+            self.aiOutlookFeatureStatus = try? await self.api.aiOutlookFeatureStatus()
             self.preferences = try await self.api.notificationPreferences(userId: self.userId)
             self.favorites = try await self.api.favorites(userId: self.userId)
             try await self.registerIOSDeviceIfEnabled()
@@ -148,6 +155,10 @@ final class CompanionAppModel: ObservableObject {
 
     @discardableResult
     func updateAIOutlookEnabled(_ enabled: Bool) async -> Bool {
+        guard aiOutlookAvailable else {
+            errorMessage = AppLanguage.shared.text("ai.maintenance.message")
+            return false
+        }
         await run {
             self.preferences = try await self.api.updateNotificationPreferences(
                 userId: self.userId,
@@ -157,6 +168,25 @@ final class CompanionAppModel: ObservableObject {
             )
         }
         return preferences?.aiOutlookEnabled == enabled
+    }
+
+    func refreshAIOutlookFeatureStatus(force: Bool = true) async {
+        if !force, aiOutlookFeatureStatus != nil { return }
+        await run {
+            self.aiOutlookFeatureStatus = try await self.api.aiOutlookFeatureStatus()
+        }
+    }
+
+    func cachedAIAnalysis(ticker: String, interval: String, horizon: Int) -> DecisionSupportAnalysis? {
+        aiAnalysisCache[AIAnalysisCacheKey(ticker: ticker, interval: interval, horizon: horizon)]
+    }
+
+    func storeAIAnalysis(_ analysis: DecisionSupportAnalysis) {
+        aiAnalysisCache[AIAnalysisCacheKey(
+            ticker: analysis.ticker,
+            interval: analysis.interval,
+            horizon: analysis.horizon
+        )] = analysis
     }
 
     func handleServerSubscriptionAvailable() {
@@ -240,5 +270,17 @@ final class CompanionAppModel: ObservableObject {
             errorMessage = error.localizedDescription
         }
         isLoading = false
+    }
+}
+
+private struct AIAnalysisCacheKey: Hashable {
+    let ticker: String
+    let interval: String
+    let horizon: Int
+
+    init(ticker: String, interval: String, horizon: Int) {
+        self.ticker = ticker.uppercased()
+        self.interval = interval
+        self.horizon = horizon
     }
 }

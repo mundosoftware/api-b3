@@ -1,5 +1,6 @@
 import Charts
 import SwiftUI
+import UIKit
 
 struct CompanyDetailView: View {
     @EnvironmentObject private var model: CompanionAppModel
@@ -11,6 +12,8 @@ struct CompanyDetailView: View {
     @State private var aiError: String?
     @State private var aiRequestID = UUID()
     @State private var aiToggleIsLoading = false
+    @State private var aiCopyToastMessage: String?
+    @State private var aiCopyToastID = UUID()
     @State private var showAIActivationDisclosure = false
 
     init(company: Company) {
@@ -84,30 +87,47 @@ struct CompanyDetailView: View {
             }
         }
         .navigationTitle(company.ticker)
+        .overlay(alignment: .top) {
+            if let aiCopyToastMessage {
+                AITextCopyToast(message: aiCopyToastMessage)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 8)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .zIndex(1)
+            }
+        }
         .task {
             await reload()
-            if model.aiOutlookEnabled {
+            await model.refreshAIOutlookFeatureStatus(force: false)
+            if model.aiOutlookAvailable && model.aiOutlookEnabled {
                 await loadAIAnalysis()
             }
             await model.loadAlerts(ticker: company.ticker)
         }
         .refreshable {
             await reload()
-            if model.aiOutlookEnabled {
-                await loadAIAnalysis(forceRefresh: true)
-            }
+            await model.refreshAIOutlookFeatureStatus()
             await model.loadAlerts(ticker: company.ticker)
         }
         .onChange(of: aiHorizon) { _, _ in
-            guard model.aiOutlookEnabled else { return }
+            guard model.aiOutlookAvailable, model.aiOutlookEnabled else { return }
             Task {
                 await loadAIAnalysis(forceRefresh: true)
             }
         }
         .onChange(of: model.aiOutlookEnabled) { _, enabled in
-            guard enabled, aiAnalysis == nil, !aiToggleIsLoading else { return }
+            guard model.aiOutlookAvailable, enabled, aiAnalysis == nil, !aiToggleIsLoading else { return }
             Task {
-                await loadAIAnalysis(forceRefresh: true)
+                await loadAIAnalysis()
+            }
+        }
+        .onChange(of: model.aiOutlookAvailable) { _, available in
+            if !available {
+                resetAIOutlookData()
+            } else if model.aiOutlookEnabled && aiAnalysis == nil {
+                Task {
+                    await loadAIAnalysis()
+                }
             }
         }
         .alert(language.text("ai.ftue.title"), isPresented: $showAIActivationDisclosure) {
@@ -119,7 +139,9 @@ struct CompanyDetailView: View {
 
     private var aiSection: some View {
         Section(language.text("section.ai_outlook")) {
-            if !model.aiOutlookEnabled {
+            if !model.aiOutlookAvailable {
+                AIOutlookMaintenanceView()
+            } else if !model.aiOutlookEnabled {
                 AIEnableOutlookView(isLoading: aiToggleIsLoading) {
                     Task {
                         await toggleAIOutlook()
@@ -143,7 +165,11 @@ struct CompanyDetailView: View {
                 }
 
                 if let aiAnalysis {
-                    AIOutlookView(analysis: aiAnalysis, isLoading: aiIsLoading)
+                    AIOutlookView(
+                        analysis: aiAnalysis,
+                        isLoading: aiIsLoading,
+                        onCopyForTranslation: copyAITextForTranslation
+                    )
                 }
 
                 if let aiError {
@@ -183,20 +209,40 @@ struct CompanyDetailView: View {
     }
 
     private func loadAIAnalysis(forceRefresh: Bool = false) async {
-        guard model.aiOutlookEnabled else { return }
+        guard model.aiOutlookAvailable, model.aiOutlookEnabled else { return }
+        let interval = "1d"
         let requestID = UUID()
         let requestHorizon = aiHorizon
+        if !forceRefresh {
+            if let current = aiAnalysis,
+               current.ticker.uppercased() == company.ticker.uppercased(),
+               current.interval == interval,
+               current.horizon == requestHorizon {
+                return
+            }
+            if let cached = model.cachedAIAnalysis(
+                ticker: company.ticker,
+                interval: interval,
+                horizon: requestHorizon
+            ) {
+                aiAnalysis = cached
+                aiError = nil
+                return
+            }
+        }
         aiRequestID = requestID
         aiIsLoading = true
         aiError = nil
         do {
             let analysis = try await CompanionAPIClient.shared.aiAnalysis(
                 ticker: company.ticker,
+                interval: interval,
                 horizon: requestHorizon,
                 forceRefresh: forceRefresh
             )
-            if aiRequestID == requestID && model.aiOutlookEnabled {
+            if aiRequestID == requestID && model.aiOutlookAvailable && model.aiOutlookEnabled {
                 aiAnalysis = analysis
+                model.storeAIAnalysis(analysis)
             }
         } catch {
             if aiRequestID == requestID {
@@ -209,6 +255,7 @@ struct CompanyDetailView: View {
     }
 
     private func toggleAIOutlook() async {
+        guard model.aiOutlookAvailable else { return }
         let shouldEnable = !model.aiOutlookEnabled
         aiToggleIsLoading = true
         let updated = await model.updateAIOutlookEnabled(shouldEnable)
@@ -216,15 +263,52 @@ struct CompanyDetailView: View {
         guard updated else { return }
 
         if !shouldEnable {
-            aiRequestID = UUID()
-            aiIsLoading = false
-            aiError = nil
-            aiAnalysis = nil
+            resetAIOutlookData()
             return
         }
 
         showAIActivationDisclosure = true
-        await loadAIAnalysis(forceRefresh: true)
+        await loadAIAnalysis()
+    }
+
+    private func resetAIOutlookData() {
+        aiRequestID = UUID()
+        aiIsLoading = false
+        aiError = nil
+        aiAnalysis = nil
+    }
+
+    private func copyAITextForTranslation(_ text: String) {
+        UIPasteboard.general.string = text
+        let toastID = UUID()
+        aiCopyToastID = toastID
+        withAnimation(.easeInOut(duration: 0.2)) {
+            aiCopyToastMessage = language.text("ai.copy_translate_toast")
+        }
+        Task {
+            try? await Task.sleep(nanoseconds: 2_500_000_000)
+            await MainActor.run {
+                guard aiCopyToastID == toastID else { return }
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    aiCopyToastMessage = nil
+                }
+            }
+        }
+    }
+}
+
+struct AIOutlookMaintenanceView: View {
+    @EnvironmentObject private var language: AppLanguage
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label(language.text("ai.maintenance.title"), systemImage: "wrench.and.screwdriver")
+                .font(.headline)
+            Text(language.text("ai.maintenance.message"))
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 6)
     }
 }
 
@@ -308,6 +392,7 @@ struct AIOutlookView: View {
 
     let analysis: DecisionSupportAnalysis
     let isLoading: Bool
+    let onCopyForTranslation: (String) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -327,6 +412,11 @@ struct AIOutlookView: View {
             Text(analysis.action)
                 .font(.footnote)
                 .foregroundStyle(.secondary)
+            if showsCopyControls {
+                AITextCopyCTA(isLoading: isLoading) {
+                    onCopyForTranslation(summaryActionText)
+                }
+            }
 
             DecisionForecastChart(analysis: analysis)
 
@@ -353,13 +443,18 @@ struct AIOutlookView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+                if showsCopyControls {
+                    AITextCopyCTA(isLoading: isLoading) {
+                        onCopyForTranslation(driversText)
+                    }
+                }
             }
 
             VStack(alignment: .leading, spacing: 6) {
                 Text(language.text("ai.warnings"))
                     .font(.caption.bold())
                 ForEach(analysis.warnings.prefix(3), id: \.self) { warning in
-                    Label(warning, systemImage: "exclamationmark.triangle")
+                    Label(language.aiWarningText(warning), systemImage: "exclamationmark.triangle")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -379,6 +474,18 @@ struct AIOutlookView: View {
                     .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
             }
         }
+    }
+
+    private var showsCopyControls: Bool {
+        language.code == .pt
+    }
+
+    private var summaryActionText: String {
+        "\(analysis.summary)\n\n\(analysis.action)"
+    }
+
+    private var driversText: String {
+        analysis.drivers.prefix(4).joined(separator: "\n")
     }
 
     private var outlookLabel: String {
@@ -432,6 +539,40 @@ struct AIOutlookView: View {
 
     private func unsignedPercent(_ value: Double) -> String {
         String(format: "%.0f%%", value)
+    }
+}
+
+struct AITextCopyCTA: View {
+    @EnvironmentObject private var language: AppLanguage
+
+    let isLoading: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(language.text("ai.copy_text"))
+                .font(.caption.weight(.semibold))
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 5)
+        }
+        .buttonStyle(.bordered)
+        .disabled(isLoading)
+    }
+}
+
+struct AITextCopyToast: View {
+    let message: String
+
+    var body: some View {
+        Text(message)
+            .font(.caption.weight(.semibold))
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+            .shadow(radius: 10, y: 4)
     }
 }
 
