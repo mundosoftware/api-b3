@@ -1242,7 +1242,7 @@
                 }
               ]
             },
-            "description": "Generated from docs/telemetry-curls.md: List registered devices with token IDs masked."
+            "description": "Generated from docs/telemetry-curls.md: List registered devices with token IDs masked, including ai_outlook_enabled so telemetry shows whether the user activated AI Outlook."
           },
           "response": []
         },
@@ -1282,7 +1282,7 @@
                 }
               ]
             },
-            "description": "Generated from docs/telemetry-curls.md: List only watchOS devices."
+            "description": "Generated from docs/telemetry-curls.md: List only watchOS devices, including ai_outlook_enabled so telemetry shows whether the user activated AI Outlook."
           },
           "response": []
         },
@@ -1318,7 +1318,7 @@
                 }
               ]
             },
-            "description": "Generated from docs/telemetry-curls.md: User devices."
+            "description": "Generated from docs/telemetry-curls.md: User devices, including ai_outlook_enabled so telemetry shows whether the user activated AI Outlook."
           },
           "response": []
         }
@@ -1343,7 +1343,42 @@
                 "notification-preferences"
               ]
             },
-            "description": "Generated from docs/telemetry-curls.md: User preferences."
+            "description": "Generated from docs/telemetry-curls.md: User preferences, including ai_outlook_enabled."
+          },
+          "response": []
+        },
+        {
+          "name": "Enable AI Outlook preference",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{API_BASE}}/users/{{USER_ID}}/notification-preferences",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "users",
+                "{{USER_ID}}",
+                "notification-preferences"
+              ]
+            },
+            "description": "Enable AI Outlook for this user. Admin device telemetry exposes this as ai_outlook_enabled.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"ai_outlook_enabled\": true\n  }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
           },
           "response": []
         }

@@ -14,9 +14,21 @@ class Settings(BaseModel):
     server_host: str = "0.0.0.0"
     server_port: int = 8000
     quote_cache_ttl_seconds: int = 60
+    candle_cache_ttl_seconds: int = 3600
+    prediction_cache_ttl_seconds: int = 900
     check_loop_seconds: int = 30
     check_loop_enabled: bool = True
     default_timezone: str = "America/Sao_Paulo"
+    kronos_enabled: bool = True
+    kronos_required: bool = False
+    kronos_repo_path: str | None = None
+    kronos_model_name: str = "NeoQuasar/Kronos-base"
+    kronos_tokenizer_name: str = "NeoQuasar/Kronos-Tokenizer-base"
+    kronos_max_context: int = 512
+    kronos_sample_count: int = 4
+    kronos_temperature: float = 1.0
+    kronos_top_p: float = 0.9
+    kronos_device: str | None = None
     onesignal_app_id: str | None = None
     onesignal_rest_api_key: str | None = None
     onesignal_watch_app_id: str | None = None
@@ -45,11 +57,45 @@ class Settings(BaseModel):
                     cls.model_fields["quote_cache_ttl_seconds"].default,
                 )
             ),
+            candle_cache_ttl_seconds=int(
+                os.getenv(
+                    "CANDLE_CACHE_TTL_SECONDS",
+                    cls.model_fields["candle_cache_ttl_seconds"].default,
+                )
+            ),
+            prediction_cache_ttl_seconds=int(
+                os.getenv(
+                    "PREDICTION_CACHE_TTL_SECONDS",
+                    cls.model_fields["prediction_cache_ttl_seconds"].default,
+                )
+            ),
             check_loop_seconds=int(
                 os.getenv("CHECK_LOOP_SECONDS", cls.model_fields["check_loop_seconds"].default)
             ),
             check_loop_enabled=env_bool("CHECK_LOOP_ENABLED", cls.model_fields["check_loop_enabled"].default),
             default_timezone=os.getenv("DEFAULT_TIMEZONE", cls.model_fields["default_timezone"].default),
+            kronos_enabled=env_bool("KRONOS_ENABLED", cls.model_fields["kronos_enabled"].default),
+            kronos_required=env_bool("KRONOS_REQUIRED", cls.model_fields["kronos_required"].default),
+            kronos_repo_path=os.getenv("KRONOS_REPO_PATH") or None,
+            kronos_model_name=os.getenv(
+                "KRONOS_MODEL_NAME",
+                cls.model_fields["kronos_model_name"].default,
+            ),
+            kronos_tokenizer_name=os.getenv(
+                "KRONOS_TOKENIZER_NAME",
+                cls.model_fields["kronos_tokenizer_name"].default,
+            ),
+            kronos_max_context=int(
+                os.getenv("KRONOS_MAX_CONTEXT", cls.model_fields["kronos_max_context"].default)
+            ),
+            kronos_sample_count=int(
+                os.getenv("KRONOS_SAMPLE_COUNT", cls.model_fields["kronos_sample_count"].default)
+            ),
+            kronos_temperature=float(
+                os.getenv("KRONOS_TEMPERATURE", cls.model_fields["kronos_temperature"].default)
+            ),
+            kronos_top_p=float(os.getenv("KRONOS_TOP_P", cls.model_fields["kronos_top_p"].default)),
+            kronos_device=os.getenv("KRONOS_DEVICE") or None,
             onesignal_app_id=os.getenv("ONESIGNAL_APP_ID") or None,
             onesignal_rest_api_key=os.getenv("ONESIGNAL_REST_API_KEY") or None,
             onesignal_watch_app_id=os.getenv("ONESIGNAL_WATCH_APP_ID") or None,

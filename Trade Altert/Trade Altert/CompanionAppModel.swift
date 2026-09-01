@@ -26,6 +26,10 @@ final class CompanionAppModel: ObservableObject {
         preferences?.watchosEnabled ?? true
     }
 
+    var aiOutlookEnabled: Bool {
+        preferences?.aiOutlookEnabled == true
+    }
+
     var iosRegistrationStatus: String {
         preferences?.iosRegistered == true
             ? AppLanguage.shared.text("status.registered")
@@ -140,6 +144,19 @@ final class CompanionAppModel: ObservableObject {
                 CompanionWatchSyncService.shared.sendUserId(userId)
             }
         }
+    }
+
+    @discardableResult
+    func updateAIOutlookEnabled(_ enabled: Bool) async -> Bool {
+        await run {
+            self.preferences = try await self.api.updateNotificationPreferences(
+                userId: self.userId,
+                iosEnabled: nil,
+                watchosEnabled: nil,
+                aiOutlookEnabled: enabled
+            )
+        }
+        return preferences?.aiOutlookEnabled == enabled
     }
 
     func handleServerSubscriptionAvailable() {

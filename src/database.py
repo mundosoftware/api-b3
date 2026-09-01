@@ -83,6 +83,39 @@ def init_db(settings: Settings | None = None) -> None:
                 updated_at TEXT
             );
 
+            CREATE TABLE IF NOT EXISTS candles (
+                ticker TEXT NOT NULL REFERENCES companies(ticker) ON DELETE CASCADE,
+                interval TEXT NOT NULL,
+                timestamp TEXT NOT NULL,
+                open REAL NOT NULL,
+                high REAL NOT NULL,
+                low REAL NOT NULL,
+                close REAL NOT NULL,
+                volume REAL,
+                amount REAL,
+                source TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                PRIMARY KEY(ticker, interval, timestamp)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_candles_lookup
+                ON candles(ticker, interval, timestamp DESC);
+
+            CREATE TABLE IF NOT EXISTS prediction_cache (
+                ticker TEXT NOT NULL REFERENCES companies(ticker) ON DELETE CASCADE,
+                interval TEXT NOT NULL,
+                horizon INTEGER NOT NULL,
+                lookback INTEGER NOT NULL,
+                model_name TEXT NOT NULL,
+                response_json TEXT NOT NULL,
+                generated_at TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                PRIMARY KEY(ticker, interval, horizon, lookback, model_name)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_prediction_cache_expiry
+                ON prediction_cache(expires_at);
+
             CREATE TABLE IF NOT EXISTS users (
                 user_id TEXT PRIMARY KEY,
                 display_name TEXT,
@@ -113,6 +146,7 @@ def init_db(settings: Settings | None = None) -> None:
                 user_id TEXT PRIMARY KEY REFERENCES users(user_id) ON DELETE CASCADE,
                 ios_enabled INTEGER NOT NULL DEFAULT 1,
                 watchos_enabled INTEGER NOT NULL DEFAULT 1,
+                ai_outlook_enabled INTEGER NOT NULL DEFAULT 0,
                 updated_at TEXT NOT NULL
             );
 
@@ -255,6 +289,12 @@ def init_db(settings: Settings | None = None) -> None:
         _ensure_column(db, "user_devices", "device_model", "TEXT")
         _ensure_column(db, "user_devices", "device_os", "TEXT")
         _ensure_column(db, "user_devices", "app_version", "TEXT")
+        _ensure_column(
+            db,
+            "notification_preferences",
+            "ai_outlook_enabled",
+            "INTEGER NOT NULL DEFAULT 0",
+        )
         now = utc_now_iso()
         for company in ticker_catalog():
             db.execute(

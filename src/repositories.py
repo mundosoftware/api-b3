@@ -1,3 +1,4 @@
+import json
 import sqlite3
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
@@ -23,6 +24,22 @@ def company_from_row(row: sqlite3.Row) -> dict[str, Any]:
         "last_price": row["last_price"],
         "daily_change_percent": row["daily_change_percent"],
         "updated_at": row["updated_at"],
+    }
+
+
+def candle_from_row(row: sqlite3.Row) -> dict[str, Any]:
+    return {
+        "ticker": row["ticker"],
+        "interval": row["interval"],
+        "timestamp": row["timestamp"],
+        "open": row["open"],
+        "high": row["high"],
+        "low": row["low"],
+        "close": row["close"],
+        "volume": row["volume"],
+        "amount": row["amount"],
+        "source": row["source"],
+        "created_at": row["created_at"],
     }
 
 
@@ -581,6 +598,173 @@ class Repository:
             row = db.execute("SELECT * FROM companies WHERE ticker = ?", (normalized,)).fetchone()
             return company_from_row(row)
 
+    def upsert_candles(
+        self,
+        ticker: str,
+        interval: str,
+        candles: Sequence[dict[str, Any]],
+        source: str = "yahoo",
+    ) -> int:
+        normalized = normalize_ticker(ticker)
+        if not candles:
+            return 0
+        now = utc_now_iso()
+        rows: list[tuple[Any, ...]] = []
+        for candle in candles:
+            rows.append(
+                (
+                    normalized,
+                    interval,
+                    candle["timestamp"],
+                    float(candle["open"]),
+                    float(candle["high"]),
+                    float(candle["low"]),
+                    float(candle["close"]),
+                    None if candle.get("volume") is None else float(candle["volume"]),
+                    None if candle.get("amount") is None else float(candle["amount"]),
+                    candle.get("source") or source,
+                    now,
+                )
+            )
+        with self.database.connect() as db:
+            self._ensure_company(db, normalized)
+            db.executemany(
+                """
+                INSERT INTO candles(
+                    ticker, interval, timestamp, open, high, low, close,
+                    volume, amount, source, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(ticker, interval, timestamp) DO UPDATE SET
+                    open = excluded.open,
+                    high = excluded.high,
+                    low = excluded.low,
+                    close = excluded.close,
+                    volume = excluded.volume,
+                    amount = excluded.amount,
+                    source = excluded.source,
+                    created_at = excluded.created_at
+                """,
+                rows,
+            )
+        return len(rows)
+
+    def list_candles(
+        self,
+        ticker: str,
+        interval: str = "1d",
+        limit: int | None = None,
+    ) -> list[dict[str, Any]]:
+        normalized = normalize_ticker(ticker)
+        params: list[Any] = [normalized, interval]
+        limit_clause = ""
+        if limit is not None:
+            limit = max(1, min(limit, 5000))
+            limit_clause = "LIMIT ?"
+            params.append(limit)
+        with self.database.connect() as db:
+            rows = db.execute(
+                f"""
+                SELECT *
+                FROM (
+                    SELECT *
+                    FROM candles
+                    WHERE ticker = ? AND interval = ?
+                    ORDER BY timestamp DESC
+                    {limit_clause}
+                )
+                ORDER BY timestamp ASC
+                """,
+                params,
+            ).fetchall()
+            return [candle_from_row(row) for row in rows]
+
+    def latest_candle(self, ticker: str, interval: str = "1d") -> dict[str, Any] | None:
+        normalized = normalize_ticker(ticker)
+        with self.database.connect() as db:
+            row = db.execute(
+                """
+                SELECT *
+                FROM candles
+                WHERE ticker = ? AND interval = ?
+                ORDER BY timestamp DESC
+                LIMIT 1
+                """,
+                (normalized, interval),
+            ).fetchone()
+            return candle_from_row(row) if row else None
+
+    def get_prediction_cache(
+        self,
+        ticker: str,
+        interval: str,
+        horizon: int,
+        lookback: int,
+        model_name: str,
+        now: datetime | None = None,
+    ) -> dict[str, Any] | None:
+        normalized = normalize_ticker(ticker)
+        checked_at = self._coerce_utc(now or datetime.now(UTC))
+        with self.database.connect() as db:
+            row = db.execute(
+                """
+                SELECT response_json, expires_at
+                FROM prediction_cache
+                WHERE ticker = ?
+                    AND interval = ?
+                    AND horizon = ?
+                    AND lookback = ?
+                    AND model_name = ?
+                """,
+                (normalized, interval, horizon, lookback, model_name),
+            ).fetchone()
+        if not row:
+            return None
+        expires_at = parse_iso(row["expires_at"])
+        if not expires_at or self._coerce_utc(expires_at) <= checked_at:
+            return None
+        return json.loads(row["response_json"])
+
+    def save_prediction_cache(
+        self,
+        ticker: str,
+        interval: str,
+        horizon: int,
+        lookback: int,
+        model_name: str,
+        response: dict[str, Any],
+        ttl_seconds: int,
+        now: datetime | None = None,
+    ) -> None:
+        normalized = normalize_ticker(ticker)
+        generated_at = self._coerce_utc(now or datetime.now(UTC)).replace(microsecond=0)
+        expires_at = generated_at + timedelta(seconds=max(1, ttl_seconds))
+        with self.database.connect() as db:
+            self._ensure_company(db, normalized)
+            db.execute(
+                """
+                INSERT INTO prediction_cache(
+                    ticker, interval, horizon, lookback, model_name,
+                    response_json, generated_at, expires_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(ticker, interval, horizon, lookback, model_name) DO UPDATE SET
+                    response_json = excluded.response_json,
+                    generated_at = excluded.generated_at,
+                    expires_at = excluded.expires_at
+                """,
+                (
+                    normalized,
+                    interval,
+                    horizon,
+                    lookback,
+                    model_name,
+                    json.dumps(response, separators=(",", ":")),
+                    generated_at.isoformat(),
+                    expires_at.isoformat(),
+                ),
+            )
+
     def add_favorite(self, user_id: str, ticker: str) -> dict[str, Any]:
         self.upsert_user(user_id)
         normalized = normalize_ticker(ticker)
@@ -877,6 +1061,7 @@ class Repository:
                     p.user_id,
                     p.ios_enabled,
                     p.watchos_enabled,
+                    p.ai_outlook_enabled,
                     p.updated_at,
                     EXISTS(
                         SELECT 1 FROM user_devices d
@@ -904,20 +1089,27 @@ class Repository:
     ) -> dict[str, Any]:
         self.upsert_user(user_id)
         now = utc_now_iso()
+        ai_outlook_enabled = getattr(request, "ai_outlook_enabled", None)
         with self.database.connect() as db:
             self._ensure_notification_preferences(db, user_id, now)
-            if request.ios_enabled is not None or request.watchos_enabled is not None:
+            if (
+                request.ios_enabled is not None
+                or request.watchos_enabled is not None
+                or ai_outlook_enabled is not None
+            ):
                 db.execute(
                     """
                     UPDATE notification_preferences SET
                         ios_enabled = COALESCE(?, ios_enabled),
                         watchos_enabled = COALESCE(?, watchos_enabled),
+                        ai_outlook_enabled = COALESCE(?, ai_outlook_enabled),
                         updated_at = ?
                     WHERE user_id = ?
                     """,
                     (
                         None if request.ios_enabled is None else int(request.ios_enabled),
                         None if request.watchos_enabled is None else int(request.watchos_enabled),
+                        None if ai_outlook_enabled is None else int(ai_outlook_enabled),
                         now,
                         user_id,
                     ),
@@ -928,6 +1120,7 @@ class Repository:
                     p.user_id,
                     p.ios_enabled,
                     p.watchos_enabled,
+                    p.ai_outlook_enabled,
                     p.updated_at,
                     EXISTS(
                         SELECT 1 FROM user_devices d
@@ -1652,19 +1845,22 @@ class Repository:
         conditions: list[str] = []
         params: list[Any] = []
         if user_id:
-            conditions.append("user_id = ?")
+            conditions.append("d.user_id = ?")
             params.append(user_id)
         if platform:
-            conditions.append("platform = ?")
+            conditions.append("d.platform = ?")
             params.append(platform)
         where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
         with self.database.connect() as db:
             rows = db.execute(
                 f"""
-                SELECT *
-                FROM user_devices
+                SELECT
+                    d.*,
+                    COALESCE(p.ai_outlook_enabled, 0) AS ai_outlook_enabled
+                FROM user_devices d
+                LEFT JOIN notification_preferences p ON p.user_id = d.user_id
                 {where}
-                ORDER BY last_seen_at DESC, id DESC
+                ORDER BY d.last_seen_at DESC, d.id DESC
                 LIMIT ?
                 """,
                 (*params, limit),
@@ -1681,6 +1877,7 @@ class Repository:
                     "onesignal_subscription_id_tail": identifier_tail(
                         row["onesignal_subscription_id"]
                     ),
+                    "ai_outlook_enabled": bool(row["ai_outlook_enabled"]),
                     "device_model": row["device_model"],
                     "device_os": row["device_os"],
                     "app_version": row["app_version"],
@@ -1775,8 +1972,10 @@ class Repository:
     ) -> None:
         db.execute(
             """
-            INSERT INTO notification_preferences(user_id, ios_enabled, watchos_enabled, updated_at)
-            VALUES (?, 1, 1, ?)
+            INSERT INTO notification_preferences(
+                user_id, ios_enabled, watchos_enabled, ai_outlook_enabled, updated_at
+            )
+            VALUES (?, 1, 1, 0, ?)
             ON CONFLICT(user_id) DO NOTHING
             """,
             (user_id, now),
@@ -1896,6 +2095,7 @@ class Repository:
             "user_id": row["user_id"],
             "ios_enabled": bool(row["ios_enabled"]),
             "watchos_enabled": bool(row["watchos_enabled"]),
+            "ai_outlook_enabled": bool(row["ai_outlook_enabled"]),
             "ios_registered": bool(row["ios_registered"]),
             "watchos_registered": bool(row["watchos_registered"]),
             "updated_at": row["updated_at"],

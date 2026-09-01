@@ -271,13 +271,13 @@ List notification failures only:
 curl --request GET "{{API_BASE}}/admin/telemetry/notifications?failures_only=true&limit=50" --header "X-Admin-Token: {{ADMIN_TOKEN}}"
 ```
 
-List registered devices with token IDs masked:
+List registered devices with token IDs masked, including `ai_outlook_enabled`:
 
 ```bash
 curl --request GET "{{API_BASE}}/admin/telemetry/devices?user_id={{USER_ID}}&limit=50" --header "X-Admin-Token: {{ADMIN_TOKEN}}"
 ```
 
-List only watchOS devices:
+List only watchOS devices, including `ai_outlook_enabled`:
 
 ```bash
 curl --request GET "{{API_BASE}}/admin/telemetry/devices?user_id={{USER_ID}}&platform=watchos&limit=50" --header "X-Admin-Token: {{ADMIN_TOKEN}}"
@@ -289,14 +289,22 @@ List combined failures and reasons from alert events plus notification logs:
 curl --request GET "{{API_BASE}}/admin/telemetry/failures?user_id={{USER_ID}}&ticker=PETR4&limit=50" --header "X-Admin-Token: {{ADMIN_TOKEN}}"
 ```
 
-User devices
+User devices, including `ai_outlook_enabled`
 
 ```bash
 curl --request GET "{{API_BASE}}/admin/telemetry/devices?user_id={{USER_ID}}&limit=50" --header "X-Admin-Token: {{ADMIN_TOKEN}}"
 ```
 
-User preferences
+User preferences, including `ai_outlook_enabled`
 
 ```bash
 curl --request GET "{{API_BASE}}/users/{{USER_ID}}/notification-preferences"
+```
+
+Enable AI Outlook for a user:
+
+```bash
+curl --request PUT "{{API_BASE}}/users/{{USER_ID}}/notification-preferences" \
+  --header "Content-Type: application/json" \
+  --data '{"ai_outlook_enabled": true}'
 ```

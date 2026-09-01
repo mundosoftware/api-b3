@@ -57,11 +57,13 @@ actor CompanionAPIClient {
     func updateNotificationPreferences(
         userId: String,
         iosEnabled: Bool?,
-        watchosEnabled: Bool?
+        watchosEnabled: Bool?,
+        aiOutlookEnabled: Bool? = nil
     ) async throws -> NotificationPreferences {
         let body = NotificationPreferencesUpdateRequest(
             iosEnabled: iosEnabled,
-            watchosEnabled: watchosEnabled
+            watchosEnabled: watchosEnabled,
+            aiOutlookEnabled: aiOutlookEnabled
         )
         return try await send(
             "/users/\(userId)/notification-preferences",
@@ -78,6 +80,19 @@ actor CompanionAPIClient {
 
     func quote(ticker: String) async throws -> Company {
         try await send("/companies/\(ticker)?refresh=true")
+    }
+
+    func aiAnalysis(
+        ticker: String,
+        interval: String = "1d",
+        horizon: Int = 10,
+        forceRefresh: Bool = false
+    ) async throws -> DecisionSupportAnalysis {
+        let encodedTicker = ticker.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? ticker
+        let encodedInterval = interval.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? interval
+        return try await send(
+            "/companies/\(encodedTicker)/ai-analysis?interval=\(encodedInterval)&horizon=\(horizon)&refresh=\(forceRefresh)"
+        )
     }
 
     func favorites(userId: String) async throws -> [Favorite] {

@@ -7,7 +7,9 @@ from typing import Literal
 from fastapi import FastAPI, Header, HTTPException, Query, Response, status
 from fastapi.concurrency import run_in_threadpool
 
+from src.ai_analysis import DecisionSupportService, PredictionError
 from src.alerts import AlertEngine
+from src.candles import CandleLookupError, CandleService
 from src.config import Settings, get_settings
 from src.database import init_db
 from src.models import (
@@ -18,7 +20,11 @@ from src.models import (
     AlertEventLogListOut,
     AlertRunLogListOut,
     AlertTelemetryStatusListOut,
+    CandleInterval,
+    CandleListOut,
+    CandleRange,
     CompanyListOut,
+    DecisionSupportOut,
     DeviceTelemetryListOut,
     DeviceRegistrationOut,
     DeviceRegistrationRequest,
@@ -58,6 +64,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
     repository = Repository(settings)
     ticker_service = TickerService(repository, settings)
+    candle_service = CandleService(repository, settings)
+    decision_support = DecisionSupportService(repository, settings, candle_service)
     onesignal = OneSignalClient(settings)
     alert_engine = AlertEngine(repository, ticker_service, onesignal, settings)
     telemetry = TelemetryService(repository, alert_engine)
@@ -114,6 +122,52 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
         except QuoteLookupError as exc:
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+    @app.get("/companies/{ticker}/candles", response_model=CandleListOut)
+    async def get_company_candles(
+        ticker: str,
+        interval: CandleInterval = Query(default="1d"),
+        range_name: CandleRange = Query(default="2y", alias="range"),
+        limit: int = Query(default=512, ge=30, le=5000),
+        refresh: bool = Query(default=False),
+    ) -> CandleListOut:
+        try:
+            candles = await run_in_threadpool(
+                candle_service.history,
+                ticker,
+                interval,
+                range_name,
+                limit,
+                refresh,
+            )
+            return CandleListOut(result=candles)
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        except CandleLookupError as exc:
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+    @app.get("/companies/{ticker}/ai-analysis", response_model=DecisionSupportOut)
+    async def get_company_ai_analysis(
+        ticker: str,
+        interval: CandleInterval = Query(default="1d"),
+        range_name: CandleRange = Query(default="2y", alias="range"),
+        horizon: int = Query(default=10, ge=1, le=60),
+        refresh: bool = Query(default=False),
+    ) -> DecisionSupportOut:
+        try:
+            analysis = await run_in_threadpool(
+                decision_support.analysis,
+                ticker,
+                interval,
+                range_name,
+                horizon,
+                refresh,
+            )
+            return DecisionSupportOut(**analysis)
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        except (CandleLookupError, PredictionError) as exc:
             raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
     @app.put("/users/{user_id}", response_model=UserOut)

@@ -86,6 +86,7 @@ final class AppLanguage: ObservableObject {
         "section.server": [.pt: "Servidor", .en: "Server"],
         "section.language": [.pt: "Idioma", .en: "Language"],
         "section.alerts": [.pt: "Alertas", .en: "Alerts"],
+        "section.ai_outlook": [.pt: "Perspectiva IA", .en: "AI Outlook"],
         "section.week": [.pt: "Semana", .en: "Week"],
         "section.window": [.pt: "Janela", .en: "Window"],
         "label.iphone": [.pt: "iPhone", .en: "iPhone"],
@@ -95,6 +96,7 @@ final class AppLanguage: ObservableObject {
         "label.enabled": [.pt: "Ativo", .en: "Enabled"],
         "label.metric": [.pt: "Métrica", .en: "Metric"],
         "label.target": [.pt: "Alvo", .en: "Target"],
+        "label.horizon": [.pt: "Horizonte", .en: "Horizon"],
         "label.start": [.pt: "Início", .en: "Start"],
         "label.end": [.pt: "Fim", .en: "End"],
         "label.ticker": [.pt: "Ticker", .en: "Ticker"],
@@ -125,6 +127,55 @@ final class AppLanguage: ObservableObject {
         "action.update": [.pt: "Atualizar", .en: "Update"],
         "action.plans": [.pt: "Planos", .en: "Plans"],
         "action.close": [.pt: "Fechar", .en: "Close"],
+        "ai.loading": [.pt: "Analisando candles...", .en: "Analyzing candles..."],
+        "ai.updating": [.pt: "Atualizando análise...", .en: "Updating analysis..."],
+        "ai.refresh": [.pt: "Atualizar análise IA", .en: "Refresh AI analysis"],
+        "ai.enable.title": [.pt: "Ative previsões com IA", .en: "Enable AI forecasts"],
+        "ai.enable.benefit.forecast": [
+            .pt: "Veja uma projeção visual dos próximos candles.",
+            .en: "See a visual projection of the next candles."
+        ],
+        "ai.enable.benefit.research": [
+            .pt: "Baseado no paper Kronos do arXiv, com aceite na AAAI 2026.",
+            .en: "Based on the Kronos arXiv paper, accepted at AAAI 2026."
+        ],
+        "ai.enable.benefit.model": [
+            .pt: "Usa um modelo aberto criado para sequências OHLCV de mercado.",
+            .en: "Uses an open model built for market OHLCV sequences."
+        ],
+        "ai.enable.benefit.levels": [
+            .pt: "Receba suporte, resistência e preço-alvo estimados.",
+            .en: "Get estimated support, resistance, and target levels."
+        ],
+        "ai.enable.benefit.risk": [
+            .pt: "Compare tendência, faixa prevista, confiança e risco.",
+            .en: "Compare trend, forecast range, confidence, and risk."
+        ],
+        "ai.enable.cta": [.pt: "Ativar Perspectiva IA", .en: "Enable AI Outlook"],
+        "ai.enable.loading_cta": [.pt: "Ativando Perspectiva IA...", .en: "Enabling AI Outlook..."],
+        "ai.disable.cta": [.pt: "Desativar Perspectiva IA", .en: "Disable AI Outlook"],
+        "ai.disable.loading_cta": [.pt: "Desativando Perspectiva IA...", .en: "Disabling AI Outlook..."],
+        "ai.source.paper": [.pt: "Paper científico", .en: "Research paper"],
+        "ai.source.code": [.pt: "Código-fonte", .en: "Source code"],
+        "ai.ftue.title": [.pt: "Antes de usar a Perspectiva IA", .en: "Before Using AI Outlook"],
+        "ai.ftue.message": [
+            .pt: "As previsões podem estar erradas, os dados da Yahoo podem atrasar ou falhar, e a análise não é recomendação de investimento. Use como apoio, não como decisão automática.",
+            .en: "Forecasts can be wrong, Yahoo data may be delayed or incomplete, and this analysis is not investment advice. Use it as support, not as an automatic decision."
+        ],
+        "ai.target": [.pt: "Preço-alvo", .en: "Target"],
+        "ai.confidence": [.pt: "Confiança", .en: "Confidence"],
+        "ai.support": [.pt: "Suporte", .en: "Support"],
+        "ai.resistance": [.pt: "Resistência", .en: "Resistance"],
+        "ai.forecast_range": [.pt: "Faixa prevista", .en: "Forecast range"],
+        "ai.risk": [.pt: "Risco", .en: "Risk"],
+        "ai.drivers": [.pt: "Fatores", .en: "Drivers"],
+        "ai.warnings": [.pt: "Avisos", .en: "Warnings"],
+        "ai.outlook.bullish": [.pt: "Alta", .en: "Bullish"],
+        "ai.outlook.neutral": [.pt: "Neutro", .en: "Neutral"],
+        "ai.outlook.bearish": [.pt: "Baixa", .en: "Bearish"],
+        "ai.risk.low": [.pt: "Baixo", .en: "Low"],
+        "ai.risk.medium": [.pt: "Médio", .en: "Medium"],
+        "ai.risk.high": [.pt: "Alto", .en: "High"],
         "title.edit_alert": [.pt: "Editar alerta", .en: "Edit Alert"],
         "title.search": [.pt: "Buscar", .en: "Search"],
         "title.tracked": [.pt: "Acompanhadas", .en: "Tracked"],

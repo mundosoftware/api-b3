@@ -5,6 +5,11 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 Metric = Literal["price", "percent"]
 Operator = Literal["gte", "lte"]
+CandleInterval = Literal["1d", "1wk", "1mo"]
+CandleRange = Literal["6mo", "1y", "2y", "5y", "10y", "max"]
+DecisionOutlook = Literal["bullish", "neutral", "bearish"]
+DecisionRiskLevel = Literal["low", "medium", "high"]
+ForecastProvider = Literal["kronos", "statistical"]
 
 
 class CompanyOut(BaseModel):
@@ -23,6 +28,63 @@ class CompanyListOut(BaseModel):
 
 class QuoteOut(CompanyOut):
     pass
+
+
+class CandleOut(BaseModel):
+    ticker: str
+    interval: str
+    timestamp: str
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: float | None = None
+    amount: float | None = None
+    source: str
+    created_at: str | None = None
+
+
+class CandleListOut(BaseModel):
+    result: list[CandleOut]
+
+
+class ForecastCandleOut(BaseModel):
+    timestamp: str
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: float | None = None
+    amount: float | None = None
+
+
+class DecisionSupportOut(BaseModel):
+    ticker: str
+    interval: CandleInterval
+    horizon: int
+    lookback: int
+    generated_at: str
+    source: str
+    model_name: str
+    provider: ForecastProvider
+    outlook: DecisionOutlook
+    risk_level: DecisionRiskLevel
+    confidence: float
+    last_close: float
+    target_price: float
+    expected_change_percent: float
+    forecast_low_percent: float
+    forecast_high_percent: float
+    support_price: float
+    resistance_price: float
+    stop_price: float | None = None
+    take_profit_price: float | None = None
+    summary: str
+    action: str
+    drivers: list[str]
+    warnings: list[str]
+    historical: list[CandleOut]
+    forecast: list[ForecastCandleOut]
 
 
 class UserUpsertRequest(BaseModel):
@@ -83,12 +145,14 @@ class DeviceUnregisterOut(BaseModel):
 class NotificationPreferencesUpdateRequest(BaseModel):
     ios_enabled: bool | None = None
     watchos_enabled: bool | None = None
+    ai_outlook_enabled: bool | None = None
 
 
 class NotificationPreferencesOut(BaseModel):
     user_id: str
     ios_enabled: bool
     watchos_enabled: bool
+    ai_outlook_enabled: bool
     ios_registered: bool
     watchos_registered: bool
     updated_at: str
@@ -430,6 +494,7 @@ class DeviceTelemetryOut(BaseModel):
     apns_token_tail: str | None = None
     has_onesignal_subscription: bool
     onesignal_subscription_id_tail: str | None = None
+    ai_outlook_enabled: bool
     device_model: str | None = None
     device_os: str | None = None
     app_version: str | None = None

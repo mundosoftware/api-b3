@@ -25,6 +25,104 @@ struct CompanyListResponse: Codable {
     let result: [Company]
 }
 
+struct AICandle: Codable, Identifiable, Hashable {
+    var id: String { "\(ticker)-\(interval)-\(timestamp)" }
+    let ticker: String
+    let interval: String
+    let timestamp: String
+    let open: Double
+    let high: Double
+    let low: Double
+    let close: Double
+    let volume: Double?
+    let amount: Double?
+    let source: String
+    let createdAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case ticker
+        case interval
+        case timestamp
+        case open
+        case high
+        case low
+        case close
+        case volume
+        case amount
+        case source
+        case createdAt = "created_at"
+    }
+}
+
+struct AIForecastCandle: Codable, Identifiable, Hashable {
+    var id: String { timestamp }
+    let timestamp: String
+    let open: Double
+    let high: Double
+    let low: Double
+    let close: Double
+    let volume: Double?
+    let amount: Double?
+}
+
+struct DecisionSupportAnalysis: Codable {
+    let ticker: String
+    let interval: String
+    let horizon: Int
+    let lookback: Int
+    let generatedAt: String
+    let source: String
+    let modelName: String
+    let provider: String
+    let outlook: String
+    let riskLevel: String
+    let confidence: Double
+    let lastClose: Double
+    let targetPrice: Double
+    let expectedChangePercent: Double
+    let forecastLowPercent: Double
+    let forecastHighPercent: Double
+    let supportPrice: Double
+    let resistancePrice: Double
+    let stopPrice: Double?
+    let takeProfitPrice: Double?
+    let summary: String
+    let action: String
+    let drivers: [String]
+    let warnings: [String]
+    let historical: [AICandle]
+    let forecast: [AIForecastCandle]
+
+    enum CodingKeys: String, CodingKey {
+        case ticker
+        case interval
+        case horizon
+        case lookback
+        case generatedAt = "generated_at"
+        case source
+        case modelName = "model_name"
+        case provider
+        case outlook
+        case riskLevel = "risk_level"
+        case confidence
+        case lastClose = "last_close"
+        case targetPrice = "target_price"
+        case expectedChangePercent = "expected_change_percent"
+        case forecastLowPercent = "forecast_low_percent"
+        case forecastHighPercent = "forecast_high_percent"
+        case supportPrice = "support_price"
+        case resistancePrice = "resistance_price"
+        case stopPrice = "stop_price"
+        case takeProfitPrice = "take_profit_price"
+        case summary
+        case action
+        case drivers
+        case warnings
+        case historical
+        case forecast
+    }
+}
+
 struct Favorite: Codable, Identifiable {
     var id: String { ticker }
     let ticker: String
@@ -142,6 +240,7 @@ struct NotificationPreferences: Codable {
     let userId: String
     var iosEnabled: Bool
     var watchosEnabled: Bool
+    var aiOutlookEnabled: Bool
     let iosRegistered: Bool
     let watchosRegistered: Bool
     let updatedAt: String
@@ -150,6 +249,7 @@ struct NotificationPreferences: Codable {
         case userId = "user_id"
         case iosEnabled = "ios_enabled"
         case watchosEnabled = "watchos_enabled"
+        case aiOutlookEnabled = "ai_outlook_enabled"
         case iosRegistered = "ios_registered"
         case watchosRegistered = "watchos_registered"
         case updatedAt = "updated_at"
@@ -159,10 +259,12 @@ struct NotificationPreferences: Codable {
 struct NotificationPreferencesUpdateRequest: Encodable {
     let iosEnabled: Bool?
     let watchosEnabled: Bool?
+    let aiOutlookEnabled: Bool?
 
     enum CodingKeys: String, CodingKey {
         case iosEnabled = "ios_enabled"
         case watchosEnabled = "watchos_enabled"
+        case aiOutlookEnabled = "ai_outlook_enabled"
     }
 }
 
