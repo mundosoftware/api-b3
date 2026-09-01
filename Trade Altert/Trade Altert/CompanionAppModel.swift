@@ -159,22 +159,32 @@ final class CompanionAppModel: ObservableObject {
             errorMessage = AppLanguage.shared.text("ai.maintenance.message")
             return false
         }
-        await run {
+        isLoading = true
+        errorMessage = nil
+        do {
             self.preferences = try await self.api.updateNotificationPreferences(
                 userId: self.userId,
                 iosEnabled: nil,
                 watchosEnabled: nil,
                 aiOutlookEnabled: enabled
             )
+        } catch {
+            errorMessage = AppLanguage.shared.aiOutlookErrorText(error)
         }
+        isLoading = false
         return preferences?.aiOutlookEnabled == enabled
     }
 
     func refreshAIOutlookFeatureStatus(force: Bool = true) async {
         if !force, aiOutlookFeatureStatus != nil { return }
-        await run {
+        isLoading = true
+        errorMessage = nil
+        do {
             self.aiOutlookFeatureStatus = try await self.api.aiOutlookFeatureStatus()
+        } catch {
+            errorMessage = AppLanguage.shared.aiOutlookErrorText(error)
         }
+        isLoading = false
     }
 
     func cachedAIAnalysis(ticker: String, interval: String, horizon: Int) -> DecisionSupportAnalysis? {

@@ -485,16 +485,21 @@ wait_for_remote_health() {
 }
 
 public_health_url() {
+  public_url_for_path "/health"
+}
+
+public_url_for_path() {
+  local path="$1"
   if https_enabled; then
     if [[ "${HTTPS_SERVER_PORT}" == "443" ]]; then
-      printf 'https://%s/health' "${VPS_HOST}"
+      printf 'https://%s%s' "${VPS_HOST}" "${path}"
     else
-      printf 'https://%s:%s/health' "${VPS_HOST}" "${HTTPS_SERVER_PORT}"
+      printf 'https://%s:%s%s' "${VPS_HOST}" "${HTTPS_SERVER_PORT}" "${path}"
     fi
   elif [[ "${PUBLIC_SERVER_PORT}" == "80" ]]; then
-    printf 'http://%s/health' "${VPS_HOST}"
+    printf 'http://%s%s' "${VPS_HOST}" "${path}"
   else
-    printf 'http://%s:%s/health' "${VPS_HOST}" "${PUBLIC_SERVER_PORT}"
+    printf 'http://%s:%s%s' "${VPS_HOST}" "${PUBLIC_SERVER_PORT}" "${path}"
   fi
 }
 
@@ -527,6 +532,44 @@ check_public_health() {
 
   echo "The service is running on the VPS, but the public health URL is not reachable from this machine." >&2
   echo "Most common causes: VPS firewall/security-group port ${PUBLIC_SERVER_PORT} is closed, nginx is not listening on the public port, TLS certificate issuance failed, or the provider blocks direct inbound traffic." >&2
+  print_remote_diagnostics
+  return 1
+}
+
+verify_remote_ai_outlook_source() {
+  echo "Verifying deployed AI Outlook route source"
+  if remote "grep -q 'features/ai-outlook' '${APP_DIR}/src/application.py' && grep -q 'admin/features/ai-outlook' '${APP_DIR}/src/application.py'"; then
+    return 0
+  fi
+
+  echo "The deployed source at ${APP_DIR} does not contain the AI Outlook feature routes." >&2
+  echo "This would make /features/ai-outlook and /admin/features/ai-outlook return 404 even when /health works." >&2
+  print_remote_diagnostics
+  return 1
+}
+
+check_internal_ai_outlook_routes() {
+  echo "Checking AI Outlook feature routes inside VPS"
+  if remote "curl -fsS --max-time 5 'http://127.0.0.1:${SERVER_PORT}/features/ai-outlook' >/dev/null && curl -fsS --max-time 5 --header 'X-Admin-Token: ${ADMIN_TOKEN}' 'http://127.0.0.1:${SERVER_PORT}/admin/features/ai-outlook' >/dev/null"; then
+    return 0
+  fi
+
+  echo "The API is healthy, but AI Outlook feature routes are not reachable inside the VPS." >&2
+  echo "If these endpoints return 404, systemd is likely running stale code or a different WorkingDirectory." >&2
+  print_remote_diagnostics
+  return 1
+}
+
+check_public_ai_outlook_routes() {
+  local public_feature_url
+  public_feature_url="$(public_url_for_path "/features/ai-outlook")"
+  echo "Checking public AI Outlook feature URL: ${public_feature_url}"
+  if curl -fsS --max-time 8 "${public_feature_url}" >/dev/null; then
+    return 0
+  fi
+
+  echo "The AI Outlook route works internally, but the public feature URL is not reachable from this machine." >&2
+  echo "Check nginx, TLS, and the public API base URL used by Postman/iOS." >&2
   print_remote_diagnostics
   return 1
 }
@@ -696,8 +739,10 @@ install_kronos_source() {
 if [ -d '${KRONOS_RUNTIME_REPO_PATH}/.git' ]; then
   git -C '${KRONOS_RUNTIME_REPO_PATH}' pull --ff-only
 elif [ -e '${KRONOS_RUNTIME_REPO_PATH}' ]; then
-  echo '${KRONOS_RUNTIME_REPO_PATH} exists and is not a git checkout' >&2
-  exit 1
+  backup_path='${KRONOS_RUNTIME_REPO_PATH}.bak.'\$(date -u +%Y%m%d%H%M%S)
+  echo \"${KRONOS_RUNTIME_REPO_PATH} exists and is not a git checkout; moving it to \${backup_path}\"
+  mv '${KRONOS_RUNTIME_REPO_PATH}' \"\${backup_path}\"
+  git clone --depth 1 '${KRONOS_REPO_URL}' '${KRONOS_RUNTIME_REPO_PATH}'
 else
   git clone --depth 1 '${KRONOS_REPO_URL}' '${KRONOS_RUNTIME_REPO_PATH}'
 fi"
@@ -722,11 +767,14 @@ rsync -az --delete \
   --exclude "local.env" \
   --exclude "local.env.*" \
   --exclude ".deploy.env" \
+  --exclude ".cache" \
+  --exclude ".deps" \
   --exclude "database" \
   --exclude "venv" \
   --exclude "__pycache__" \
   -e "${RSYNC_SSH}" \
   "${ROOT_DIR}/" "${SSH_TARGET}:${APP_DIR}/"
+verify_remote_ai_outlook_source
 
 echo "Writing remote runtime env"
 TMP_ENV="$(mktemp)"
@@ -809,10 +857,12 @@ if https_enabled; then
 fi
 
 wait_for_remote_health
+check_internal_ai_outlook_routes
 if reverse_proxy_enabled; then
   wait_for_remote_public_health
 fi
 check_public_health
+check_public_ai_outlook_routes
 
 echo "Deployment finished."
 echo "Health URL: $(public_health_url)"

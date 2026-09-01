@@ -246,7 +246,7 @@ struct CompanyDetailView: View {
             }
         } catch {
             if aiRequestID == requestID {
-                aiError = error.localizedDescription
+                aiError = language.aiOutlookErrorText(error)
             }
         }
         if aiRequestID == requestID {

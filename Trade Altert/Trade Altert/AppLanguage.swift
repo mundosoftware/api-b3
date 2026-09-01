@@ -63,6 +63,41 @@ final class AppLanguage: ObservableObject {
         }
     }
 
+    func aiOutlookErrorText(_ error: Error) -> String {
+        if let apiError = error as? CompanionAPIError {
+            switch apiError {
+            case .invalidURL:
+                return text("ai.error.generic")
+            case let .badResponse(status, _):
+                switch status {
+                case 404:
+                    return text("ai.error.not_found")
+                case 408, 504:
+                    return text("ai.error.timeout")
+                case 429:
+                    return text("ai.error.busy")
+                case 500...599:
+                    return text("ai.error.unavailable")
+                default:
+                    return text("ai.error.generic")
+                }
+            }
+        }
+
+        if let urlError = error as? URLError {
+            switch urlError.code {
+            case .notConnectedToInternet, .networkConnectionLost, .cannotConnectToHost, .cannotFindHost:
+                return text("ai.error.network")
+            case .timedOut:
+                return text("ai.error.timeout")
+            default:
+                return text("ai.error.generic")
+            }
+        }
+
+        return text("ai.error.generic")
+    }
+
     private static func deviceLanguageCode() -> AppLanguageCode {
         let preferredLanguage = Locale.preferredLanguages.first ?? Locale.current.identifier
         let languageCode = Locale(identifier: preferredLanguage).language.languageCode?.identifier
@@ -184,6 +219,30 @@ final class AppLanguage: ObservableObject {
         "ai.ftue.message": [
             .pt: "As previsões podem estar erradas, os dados da Yahoo podem atrasar ou falhar, e a análise não é recomendação de investimento. Use como apoio, não como decisão automática.",
             .en: "Forecasts can be wrong, Yahoo data may be delayed or incomplete, and this analysis is not investment advice. Use it as support, not as an automatic decision."
+        ],
+        "ai.error.generic": [
+            .pt: "Não foi possível carregar a análise IA agora. Tente novamente em alguns instantes.",
+            .en: "Could not load the AI analysis right now. Try again in a moment."
+        ],
+        "ai.error.network": [
+            .pt: "Não conseguimos conectar agora. Verifique sua internet e tente novamente.",
+            .en: "We could not connect right now. Check your internet and try again."
+        ],
+        "ai.error.timeout": [
+            .pt: "A análise IA demorou mais que o esperado. Tente atualizar novamente em instantes.",
+            .en: "The AI analysis took longer than expected. Try refreshing again in a moment."
+        ],
+        "ai.error.unavailable": [
+            .pt: "A análise IA está temporariamente indisponível. Tente novamente em alguns minutos.",
+            .en: "AI analysis is temporarily unavailable. Try again in a few minutes."
+        ],
+        "ai.error.not_found": [
+            .pt: "Ainda não há dados suficientes para gerar a análise IA deste ativo.",
+            .en: "There is not enough data to generate AI analysis for this ticker yet."
+        ],
+        "ai.error.busy": [
+            .pt: "A análise IA está com muitas solicitações agora. Tente novamente em instantes.",
+            .en: "AI analysis is handling many requests right now. Try again in a moment."
         ],
         "ai.target": [.pt: "Preço-alvo", .en: "Target"],
         "ai.confidence": [.pt: "Confiança", .en: "Confidence"],
