@@ -150,6 +150,9 @@ final class AppLanguage: ObservableObject {
         "label.ticker": [.pt: "Ticker", .en: "Ticker"],
         "label.brl": [.pt: "BRL", .en: "BRL"],
         "label.percent": [.pt: "Percentual", .en: "Percent"],
+        "label.negative_percent": [.pt: "Percentual negativo", .en: "Negative percent"],
+        "label.based_on_price": [.pt: "Preço base", .en: "Base price"],
+        "label.target_price": [.pt: "Preço-alvo", .en: "Target price"],
         "label.debug": [.pt: "Debug", .en: "Debug"],
         "label.production": [.pt: "Produção", .en: "Production"],
         "status.registered": [.pt: "Registrado", .en: "Registered"],
@@ -167,12 +170,15 @@ final class AppLanguage: ObservableObject {
         "action.ok": [.pt: "OK", .en: "OK"],
         "action.done": [.pt: "Concluído", .en: "Done"],
         "action.refresh": [.pt: "Atualizar", .en: "Refresh"],
+        "action.reset": [.pt: "Redefinir", .en: "Reset"],
         "action.track": [.pt: "Acompanhar", .en: "Track"],
         "action.untrack": [.pt: "Remover", .en: "Untrack"],
         "action.delete": [.pt: "Excluir", .en: "Delete"],
         "action.new_alert": [.pt: "Novo alerta", .en: "New Alert"],
         "action.save": [.pt: "Salvar", .en: "Save"],
         "action.update": [.pt: "Atualizar", .en: "Update"],
+        "action.discard": [.pt: "Descartar", .en: "Discard"],
+        "action.keep_editing": [.pt: "Continuar editando", .en: "Keep Editing"],
         "action.plans": [.pt: "Planos", .en: "Plans"],
         "action.close": [.pt: "Fechar", .en: "Close"],
         "ai.loading": [.pt: "Analisando candles...", .en: "Analyzing candles..."],
@@ -434,6 +440,20 @@ final class AppLanguage: ObservableObject {
         "alert.price_prefix": [.pt: "Preço", .en: "Price"],
         "alert.move_prefix": [.pt: "Variação", .en: "Move"],
         "alert.paused": [.pt: "Pausado", .en: "Paused"],
+        "alert.percent_prices": [.pt: "Base %@ | Alvo %@", .en: "Base %@ | Target %@"],
+        "alert.percent_missing_baseline": [
+            .pt: "O preço base será definido na próxima cotação disponível.",
+            .en: "The base price will be set from the next available quote."
+        ],
+        "alert.unsaved_title": [.pt: "Descartar alterações?", .en: "Discard changes?"],
+        "alert.unsaved_edit_message": [
+            .pt: "Este alerta tem alterações não salvas.",
+            .en: "This alert has unsaved changes."
+        ],
+        "alert.unsaved_new_message": [
+            .pt: "Este novo alerta ainda não foi salvo.",
+            .en: "This new alert has not been saved yet."
+        ],
         "alert.window_summary": [.pt: "%@-%@ a cada %dm", .en: "%@-%@ every %dm"],
         "schedule.every_minutes": [.pt: "A cada %dm", .en: "Every %dm"],
         "schedule.cooldown_minutes": [.pt: "Intervalo %dm", .en: "Cooldown %dm"],

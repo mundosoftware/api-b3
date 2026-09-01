@@ -97,17 +97,17 @@ struct CompanyDetailView: View {
             }
         }
         .task {
+            await model.loadAlerts(ticker: company.ticker)
             await reload()
             await model.refreshAIOutlookFeatureStatus(force: false)
             if model.aiOutlookAvailable && model.aiOutlookEnabled {
                 await loadAIAnalysis()
             }
-            await model.loadAlerts(ticker: company.ticker)
         }
         .refreshable {
+            await model.loadAlerts(ticker: company.ticker)
             await reload()
             await model.refreshAIOutlookFeatureStatus()
-            await model.loadAlerts(ticker: company.ticker)
         }
         .onChange(of: aiHorizon) { _, _ in
             guard model.aiOutlookAvailable, model.aiOutlookEnabled else { return }
@@ -676,6 +676,16 @@ struct AlertRow: View {
             .foregroundStyle(.secondary)
             Text(alert.metric == .price ? currency(alert.threshold) : percent(alert.threshold))
                 .font(.headline)
+            if alert.metric == .percent, let basePrice = alert.baselinePrice ?? alert.lastPrice {
+                Text(String(
+                    format: language.text("alert.percent_prices"),
+                    currency(basePrice),
+                    currency(targetPrice(basedOn: basePrice))
+                ))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+            }
             Text(language.alertWindow(start: alert.startTime, end: alert.endTime, frequency: alert.frequencyMinutes))
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -684,10 +694,23 @@ struct AlertRow: View {
     }
 
     private func currency(_ value: Double) -> String {
-        value.formatted(.currency(code: "BRL"))
+        "R$ \(decimal(value))"
+    }
+
+    private func decimal(_ value: Double) -> String {
+        let formatter = NumberFormatter()
+        formatter.locale = Locale(identifier: "pt_BR")
+        formatter.numberStyle = .decimal
+        formatter.minimumFractionDigits = 2
+        formatter.maximumFractionDigits = 2
+        return formatter.string(from: NSNumber(value: value)) ?? String(format: "%.2f", value).replacingOccurrences(of: ".", with: ",")
     }
 
     private func percent(_ value: Double) -> String {
-        String(format: "%.2f%%", value)
+        "\(decimal(value))%"
+    }
+
+    private func targetPrice(basedOn basePrice: Double) -> Double {
+        basePrice * (1 + alert.threshold / 100)
     }
 }
