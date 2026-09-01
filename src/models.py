@@ -10,6 +10,7 @@ CandleRange = Literal["6mo", "1y", "2y", "5y", "10y", "max"]
 DecisionOutlook = Literal["bullish", "neutral", "bearish"]
 DecisionRiskLevel = Literal["low", "medium", "high"]
 ForecastProvider = Literal["kronos", "statistical"]
+AIOutlookJobStatus = Literal["queued", "running", "succeeded", "failed"]
 
 
 class CompanyOut(BaseModel):
@@ -85,6 +86,61 @@ class DecisionSupportOut(BaseModel):
     warnings: list[str]
     historical: list[CandleOut]
     forecast: list[ForecastCandleOut]
+
+
+class AIOutlookJobCreateRequest(BaseModel):
+    ticker: str = Field(min_length=1, max_length=12)
+    interval: CandleInterval = "1d"
+    range: CandleRange = "2y"
+    horizon: int = Field(default=10, ge=1, le=60)
+    refresh: bool = False
+
+
+class AIOutlookJobOut(BaseModel):
+    job_id: str
+    user_id: str
+    ticker: str
+    interval: CandleInterval
+    range: CandleRange
+    horizon: int
+    refresh: bool
+    status: AIOutlookJobStatus
+    attempt_count: int
+    max_attempts: int
+    queued_at: str
+    started_at: str | None = None
+    finished_at: str | None = None
+    next_attempt_at: str | None = None
+    failure_reason: str | None = None
+    notification_status: str | None = None
+    result: DecisionSupportOut | None = None
+
+
+class AIOutlookJobListOut(BaseModel):
+    result: list[AIOutlookJobOut]
+
+
+class AIOutlookTelemetryCountOut(BaseModel):
+    name: str
+    count: int
+
+
+class AIOutlookTelemetryTickerSummaryOut(BaseModel):
+    ticker: str
+    status: AIOutlookJobStatus
+    count: int
+
+
+class AIOutlookUsageSummaryOut(BaseModel):
+    window_hours: int
+    user_id: str | None = None
+    ticker: str | None = None
+    total_jobs: int
+    unique_users: int
+    unique_tickers: int
+    by_status: list[AIOutlookTelemetryCountOut]
+    by_ticker: list[AIOutlookTelemetryTickerSummaryOut]
+    latest_jobs: list[AIOutlookJobOut]
 
 
 class FeatureFlagOut(BaseModel):
@@ -515,6 +571,32 @@ class DeviceTelemetryOut(BaseModel):
 
 class DeviceTelemetryListOut(BaseModel):
     result: list[DeviceTelemetryOut]
+
+
+class UserTelemetryOut(BaseModel):
+    user_id: str
+    display_name: str | None = None
+    timezone: str
+    ios_enabled: bool
+    watchos_enabled: bool
+    ai_outlook_enabled: bool
+    ios_registered: bool
+    watchos_registered: bool
+    device_count: int
+    favorite_count: int
+    alert_count: int
+    enabled_alert_count: int
+    ai_outlook_job_count: int
+    ai_outlook_succeeded_count: int
+    ai_outlook_failed_count: int
+    latest_ai_outlook_job_at: str | None = None
+    latest_seen_at: str | None = None
+    created_at: str
+    updated_at: str
+
+
+class UserTelemetryListOut(BaseModel):
+    result: list[UserTelemetryOut]
 
 
 class TelemetryFailureOut(BaseModel):

@@ -3,6 +3,7 @@ import sqlite3
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from uuid import uuid4
 
 from src.config import Settings, get_settings
 from src.database import Database, normalize_ticker, parse_iso, utc_now_iso
@@ -49,6 +50,29 @@ def feature_flag_from_row(row: sqlite3.Row) -> dict[str, Any]:
         "enabled": bool(row["enabled"]),
         "updated_at": row["updated_at"],
         "updated_by": row["updated_by"],
+    }
+
+
+def ai_outlook_job_from_row(row: sqlite3.Row) -> dict[str, Any]:
+    result_json = row["result_json"]
+    return {
+        "job_id": row["job_id"],
+        "user_id": row["user_id"],
+        "ticker": row["ticker"],
+        "interval": row["interval"],
+        "range": row["range_name"],
+        "horizon": row["horizon"],
+        "refresh": bool(row["refresh"]),
+        "status": row["status"],
+        "attempt_count": row["attempt_count"],
+        "max_attempts": row["max_attempts"],
+        "queued_at": row["queued_at"],
+        "started_at": row["started_at"],
+        "finished_at": row["finished_at"],
+        "next_attempt_at": row["next_attempt_at"],
+        "failure_reason": row["failure_reason"],
+        "notification_status": row["notification_status"],
+        "result": json.loads(result_json) if result_json else None,
     }
 
 
@@ -820,6 +844,347 @@ class Repository:
                 ),
             )
 
+    def create_ai_outlook_job(
+        self,
+        user_id: str,
+        ticker: str,
+        interval: str = "1d",
+        range_name: str = "2y",
+        horizon: int = 10,
+        refresh: bool = False,
+        max_attempts: int = 3,
+        result: dict[str, Any] | None = None,
+        status: str | None = None,
+    ) -> dict[str, Any]:
+        self.upsert_user(user_id)
+        normalized = normalize_ticker(ticker)
+        horizon = max(1, min(horizon, 60))
+        max_attempts = max(1, min(max_attempts, 10))
+        now = utc_now_iso()
+        result_json = json.dumps(result, separators=(",", ":")) if result is not None else None
+        job_status = status or ("succeeded" if result is not None else "queued")
+        finished_at = now if job_status in {"succeeded", "failed"} else None
+        with self.database.connect() as db:
+            self._ensure_company(db, normalized)
+            db.execute(
+                """
+                INSERT INTO ai_outlook_jobs(
+                    job_id, user_id, ticker, interval, range_name, horizon,
+                    refresh, status, attempt_count, max_attempts, queued_at,
+                    finished_at, result_json
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)
+                """,
+                (
+                    uuid4().hex,
+                    user_id,
+                    normalized,
+                    interval,
+                    range_name,
+                    horizon,
+                    int(refresh),
+                    job_status,
+                    max_attempts,
+                    now,
+                    finished_at,
+                    result_json,
+                ),
+            )
+            row = db.execute(
+                "SELECT * FROM ai_outlook_jobs WHERE id = last_insert_rowid()"
+            ).fetchone()
+            return ai_outlook_job_from_row(row)
+
+    def find_active_ai_outlook_job(
+        self,
+        user_id: str,
+        ticker: str,
+        interval: str = "1d",
+        range_name: str = "2y",
+        horizon: int = 10,
+    ) -> dict[str, Any] | None:
+        normalized = normalize_ticker(ticker)
+        horizon = max(1, min(horizon, 60))
+        with self.database.connect() as db:
+            row = db.execute(
+                """
+                SELECT *
+                FROM ai_outlook_jobs
+                WHERE user_id = ?
+                    AND ticker = ?
+                    AND interval = ?
+                    AND range_name = ?
+                    AND horizon = ?
+                    AND status IN ('queued', 'running')
+                ORDER BY queued_at DESC, id DESC
+                LIMIT 1
+                """,
+                (user_id, normalized, interval, range_name, horizon),
+            ).fetchone()
+            return ai_outlook_job_from_row(row) if row else None
+
+    def get_ai_outlook_job(self, user_id: str, job_id: str) -> dict[str, Any] | None:
+        with self.database.connect() as db:
+            row = db.execute(
+                """
+                SELECT *
+                FROM ai_outlook_jobs
+                WHERE user_id = ? AND job_id = ?
+                """,
+                (user_id, job_id),
+            ).fetchone()
+            return ai_outlook_job_from_row(row) if row else None
+
+    def claim_next_ai_outlook_job(self, now: datetime | None = None) -> dict[str, Any] | None:
+        checked_at = self._coerce_utc(now or datetime.now(UTC)).replace(microsecond=0)
+        checked_at_iso = checked_at.isoformat()
+        with self.database.connect() as db:
+            row = db.execute(
+                """
+                SELECT *
+                FROM ai_outlook_jobs
+                WHERE status = 'queued'
+                    AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
+                ORDER BY queued_at ASC, id ASC
+                LIMIT 1
+                """,
+                (checked_at_iso,),
+            ).fetchone()
+            if row is None:
+                return None
+            db.execute(
+                """
+                UPDATE ai_outlook_jobs SET
+                    status = 'running',
+                    started_at = ?,
+                    attempt_count = attempt_count + 1,
+                    next_attempt_at = NULL
+                WHERE id = ? AND status = 'queued'
+                """,
+                (checked_at_iso, row["id"]),
+            )
+            claimed = db.execute(
+                "SELECT * FROM ai_outlook_jobs WHERE id = ?",
+                (row["id"],),
+            ).fetchone()
+            return ai_outlook_job_from_row(claimed)
+
+    def complete_ai_outlook_job(
+        self,
+        job_id: str,
+        result: dict[str, Any],
+        notification_status: str | None = None,
+        now: datetime | None = None,
+    ) -> dict[str, Any] | None:
+        finished_at = self._coerce_utc(now or datetime.now(UTC)).replace(microsecond=0).isoformat()
+        with self.database.connect() as db:
+            db.execute(
+                """
+                UPDATE ai_outlook_jobs SET
+                    status = 'succeeded',
+                    finished_at = ?,
+                    next_attempt_at = NULL,
+                    result_json = ?,
+                    failure_reason = NULL,
+                    notification_status = COALESCE(?, notification_status)
+                WHERE job_id = ?
+                """,
+                (
+                    finished_at,
+                    json.dumps(result, separators=(",", ":")),
+                    notification_status,
+                    job_id,
+                ),
+            )
+            row = db.execute(
+                "SELECT * FROM ai_outlook_jobs WHERE job_id = ?",
+                (job_id,),
+            ).fetchone()
+            return ai_outlook_job_from_row(row) if row else None
+
+    def fail_ai_outlook_job_attempt(
+        self,
+        job_id: str,
+        failure_reason: str,
+        retry_delay_seconds: int,
+        now: datetime | None = None,
+    ) -> dict[str, Any] | None:
+        checked_at = self._coerce_utc(now or datetime.now(UTC)).replace(microsecond=0)
+        with self.database.connect() as db:
+            row = db.execute(
+                "SELECT * FROM ai_outlook_jobs WHERE job_id = ?",
+                (job_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            if row["attempt_count"] < row["max_attempts"]:
+                next_attempt_at = checked_at + timedelta(seconds=max(0, retry_delay_seconds))
+                db.execute(
+                    """
+                    UPDATE ai_outlook_jobs SET
+                        status = 'queued',
+                        next_attempt_at = ?,
+                        failure_reason = ?
+                    WHERE job_id = ?
+                    """,
+                    (next_attempt_at.isoformat(), failure_reason[:512], job_id),
+                )
+            else:
+                db.execute(
+                    """
+                    UPDATE ai_outlook_jobs SET
+                        status = 'failed',
+                        finished_at = ?,
+                        next_attempt_at = NULL,
+                        failure_reason = ?
+                    WHERE job_id = ?
+                    """,
+                    (checked_at.isoformat(), failure_reason[:512], job_id),
+                )
+            updated = db.execute(
+                "SELECT * FROM ai_outlook_jobs WHERE job_id = ?",
+                (job_id,),
+            ).fetchone()
+            return ai_outlook_job_from_row(updated) if updated else None
+
+    def update_ai_outlook_job_notification_status(
+        self, job_id: str, notification_status: str
+    ) -> dict[str, Any] | None:
+        with self.database.connect() as db:
+            db.execute(
+                """
+                UPDATE ai_outlook_jobs SET notification_status = ?
+                WHERE job_id = ?
+                """,
+                (notification_status[:256], job_id),
+            )
+            row = db.execute(
+                "SELECT * FROM ai_outlook_jobs WHERE job_id = ?",
+                (job_id,),
+            ).fetchone()
+            return ai_outlook_job_from_row(row) if row else None
+
+    def requeue_running_ai_outlook_jobs(self, reason: str = "worker restarted") -> int:
+        now = utc_now_iso()
+        with self.database.connect() as db:
+            cursor = db.execute(
+                """
+                UPDATE ai_outlook_jobs SET
+                    status = 'queued',
+                    next_attempt_at = ?,
+                    failure_reason = COALESCE(failure_reason, ?)
+                WHERE status = 'running'
+                """,
+                (now, reason),
+            )
+            return cursor.rowcount
+
+    def list_ai_outlook_jobs(
+        self,
+        limit: int = 100,
+        status: str | None = None,
+        user_id: str | None = None,
+        ticker: str | None = None,
+        since: str | None = None,
+    ) -> list[dict[str, Any]]:
+        limit = max(1, min(limit, 500))
+        conditions: list[str] = []
+        params: list[Any] = []
+        if status:
+            conditions.append("status = ?")
+            params.append(status)
+        if user_id:
+            conditions.append("user_id = ?")
+            params.append(user_id)
+        if ticker:
+            conditions.append("ticker = ?")
+            params.append(normalize_ticker(ticker))
+        if since:
+            conditions.append("queued_at >= ?")
+            params.append(since)
+        where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        with self.database.connect() as db:
+            rows = db.execute(
+                f"""
+                SELECT *
+                FROM ai_outlook_jobs
+                {where}
+                ORDER BY queued_at DESC, id DESC
+                LIMIT ?
+                """,
+                (*params, limit),
+            ).fetchall()
+            return [ai_outlook_job_from_row(row) for row in rows]
+
+    def summarize_ai_outlook_usage(
+        self,
+        hours: int = 24,
+        user_id: str | None = None,
+        ticker: str | None = None,
+    ) -> dict[str, Any]:
+        hours = max(1, min(hours, 8760))
+        since = (
+            datetime.now(UTC).replace(microsecond=0) - timedelta(hours=hours)
+        ).isoformat()
+        conditions = ["queued_at >= ?"]
+        params: list[Any] = [since]
+        if user_id:
+            conditions.append("user_id = ?")
+            params.append(user_id)
+        if ticker:
+            conditions.append("ticker = ?")
+            params.append(normalize_ticker(ticker))
+        where = f"WHERE {' AND '.join(conditions)}"
+        with self.database.connect() as db:
+            totals = db.execute(
+                f"""
+                SELECT
+                    COUNT(*) AS total_jobs,
+                    COUNT(DISTINCT user_id) AS unique_users,
+                    COUNT(DISTINCT ticker) AS unique_tickers
+                FROM ai_outlook_jobs
+                {where}
+                """,
+                params,
+            ).fetchone()
+            by_status = db.execute(
+                f"""
+                SELECT status AS name, COUNT(*) AS count
+                FROM ai_outlook_jobs
+                {where}
+                GROUP BY status
+                ORDER BY count DESC, status
+                """,
+                params,
+            ).fetchall()
+            by_ticker = db.execute(
+                f"""
+                SELECT ticker, status, COUNT(*) AS count
+                FROM ai_outlook_jobs
+                {where}
+                GROUP BY ticker, status
+                ORDER BY count DESC, ticker, status
+                """,
+                params,
+            ).fetchall()
+
+        return {
+            "window_hours": hours,
+            "user_id": user_id,
+            "ticker": normalize_ticker(ticker) if ticker else None,
+            "total_jobs": totals["total_jobs"],
+            "unique_users": totals["unique_users"],
+            "unique_tickers": totals["unique_tickers"],
+            "by_status": [dict(row) for row in by_status],
+            "by_ticker": [dict(row) for row in by_ticker],
+            "latest_jobs": self.list_ai_outlook_jobs(
+                limit=10,
+                user_id=user_id,
+                ticker=ticker,
+                since=since,
+            ),
+        }
+
     def add_favorite(self, user_id: str, ticker: str) -> dict[str, Any]:
         self.upsert_user(user_id)
         normalized = normalize_ticker(ticker)
@@ -1335,7 +1700,7 @@ class Repository:
     def log_notification(
         self,
         user_id: str,
-        alert_rule_id: int,
+        alert_rule_id: int | None,
         ticker: str,
         title: str,
         body: str,
@@ -1942,6 +2307,117 @@ class Repository:
                 for row in rows
             ]
 
+    def list_user_telemetry(
+        self,
+        limit: int = 100,
+        user_id: str | None = None,
+        ai_outlook_enabled: bool | None = None,
+    ) -> list[dict[str, Any]]:
+        limit = max(1, min(limit, 500))
+        conditions: list[str] = []
+        params: list[Any] = []
+        if user_id:
+            conditions.append("u.user_id = ?")
+            params.append(user_id)
+        if ai_outlook_enabled is not None:
+            conditions.append("COALESCE(p.ai_outlook_enabled, 0) = ?")
+            params.append(int(ai_outlook_enabled))
+        where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        with self.database.connect() as db:
+            rows = db.execute(
+                f"""
+                SELECT
+                    u.user_id,
+                    u.display_name,
+                    u.timezone,
+                    u.created_at,
+                    u.updated_at,
+                    COALESCE(p.ios_enabled, 1) AS ios_enabled,
+                    COALESCE(p.watchos_enabled, 1) AS watchos_enabled,
+                    COALESCE(p.ai_outlook_enabled, 0) AS ai_outlook_enabled,
+                    EXISTS(
+                        SELECT 1 FROM user_devices d
+                        WHERE d.user_id = u.user_id
+                            AND d.platform = 'ios'
+                            AND d.onesignal_subscription_id IS NOT NULL
+                            AND d.onesignal_subscription_id != ''
+                    ) AS ios_registered,
+                    EXISTS(
+                        SELECT 1 FROM user_devices d
+                        WHERE d.user_id = u.user_id
+                            AND d.platform = 'watchos'
+                            AND d.onesignal_subscription_id IS NOT NULL
+                            AND d.onesignal_subscription_id != ''
+                    ) AS watchos_registered,
+                    (
+                        SELECT COUNT(*) FROM user_devices d
+                        WHERE d.user_id = u.user_id
+                    ) AS device_count,
+                    (
+                        SELECT MAX(d.last_seen_at) FROM user_devices d
+                        WHERE d.user_id = u.user_id
+                    ) AS latest_seen_at,
+                    (
+                        SELECT COUNT(*) FROM favorites f
+                        WHERE f.user_id = u.user_id
+                    ) AS favorite_count,
+                    (
+                        SELECT COUNT(*) FROM alert_rules a
+                        WHERE a.user_id = u.user_id
+                    ) AS alert_count,
+                    (
+                        SELECT COUNT(*) FROM alert_rules a
+                        WHERE a.user_id = u.user_id AND a.enabled = 1
+                    ) AS enabled_alert_count,
+                    (
+                        SELECT COUNT(*) FROM ai_outlook_jobs j
+                        WHERE j.user_id = u.user_id
+                    ) AS ai_outlook_job_count,
+                    (
+                        SELECT COUNT(*) FROM ai_outlook_jobs j
+                        WHERE j.user_id = u.user_id AND j.status = 'succeeded'
+                    ) AS ai_outlook_succeeded_count,
+                    (
+                        SELECT COUNT(*) FROM ai_outlook_jobs j
+                        WHERE j.user_id = u.user_id AND j.status = 'failed'
+                    ) AS ai_outlook_failed_count,
+                    (
+                        SELECT MAX(j.queued_at) FROM ai_outlook_jobs j
+                        WHERE j.user_id = u.user_id
+                    ) AS latest_ai_outlook_job_at
+                FROM users u
+                LEFT JOIN notification_preferences p ON p.user_id = u.user_id
+                {where}
+                ORDER BY COALESCE(latest_seen_at, u.updated_at, u.created_at) DESC, u.user_id
+                LIMIT ?
+                """,
+                (*params, limit),
+            ).fetchall()
+            return [
+                {
+                    "user_id": row["user_id"],
+                    "display_name": row["display_name"],
+                    "timezone": row["timezone"],
+                    "ios_enabled": bool(row["ios_enabled"]),
+                    "watchos_enabled": bool(row["watchos_enabled"]),
+                    "ai_outlook_enabled": bool(row["ai_outlook_enabled"]),
+                    "ios_registered": bool(row["ios_registered"]),
+                    "watchos_registered": bool(row["watchos_registered"]),
+                    "device_count": row["device_count"],
+                    "favorite_count": row["favorite_count"],
+                    "alert_count": row["alert_count"],
+                    "enabled_alert_count": row["enabled_alert_count"],
+                    "ai_outlook_job_count": row["ai_outlook_job_count"],
+                    "ai_outlook_succeeded_count": row["ai_outlook_succeeded_count"],
+                    "ai_outlook_failed_count": row["ai_outlook_failed_count"],
+                    "latest_ai_outlook_job_at": row["latest_ai_outlook_job_at"],
+                    "latest_seen_at": row["latest_seen_at"],
+                    "created_at": row["created_at"],
+                    "updated_at": row["updated_at"],
+                }
+                for row in rows
+            ]
+
     def list_failure_telemetry(
         self,
         limit: int = 100,
@@ -1986,11 +2462,23 @@ class Repository:
                     FROM notification_log
                     WHERE status NOT LIKE 'sent%'
                     {where}
+                    UNION ALL
+                    SELECT
+                        'ai_outlook_job' AS source,
+                        user_id,
+                        NULL AS alert_rule_id,
+                        ticker,
+                        'failed' AS reason,
+                        COALESCE(failure_reason, 'AI Outlook job failed') AS message,
+                        COALESCE(finished_at, queued_at) AS created_at
+                    FROM ai_outlook_jobs
+                    WHERE status = 'failed'
+                    {where}
                 )
                 ORDER BY created_at DESC
                 LIMIT ?
                 """,
-                (*params, *params, limit),
+                (*params, *params, *params, limit),
             ).fetchall()
             return [dict(row) for row in rows]
 

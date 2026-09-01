@@ -116,6 +116,34 @@ def init_db(settings: Settings | None = None) -> None:
             CREATE INDEX IF NOT EXISTS idx_prediction_cache_expiry
                 ON prediction_cache(expires_at);
 
+            CREATE TABLE IF NOT EXISTS ai_outlook_jobs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                job_id TEXT NOT NULL UNIQUE,
+                user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+                ticker TEXT NOT NULL REFERENCES companies(ticker) ON DELETE CASCADE,
+                interval TEXT NOT NULL,
+                range_name TEXT NOT NULL,
+                horizon INTEGER NOT NULL,
+                refresh INTEGER NOT NULL DEFAULT 0,
+                status TEXT NOT NULL CHECK(status IN ('queued', 'running', 'succeeded', 'failed')),
+                attempt_count INTEGER NOT NULL DEFAULT 0,
+                max_attempts INTEGER NOT NULL DEFAULT 3,
+                queued_at TEXT NOT NULL,
+                started_at TEXT,
+                finished_at TEXT,
+                next_attempt_at TEXT,
+                result_json TEXT,
+                failure_reason TEXT,
+                notification_status TEXT
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_ai_outlook_jobs_queue
+                ON ai_outlook_jobs(status, next_attempt_at, queued_at);
+            CREATE INDEX IF NOT EXISTS idx_ai_outlook_jobs_user_created
+                ON ai_outlook_jobs(user_id, queued_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_ai_outlook_jobs_active_lookup
+                ON ai_outlook_jobs(user_id, ticker, interval, range_name, horizon, status);
+
             CREATE TABLE IF NOT EXISTS feature_flags (
                 name TEXT PRIMARY KEY,
                 enabled INTEGER NOT NULL,

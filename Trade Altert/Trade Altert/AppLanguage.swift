@@ -184,6 +184,33 @@ final class AppLanguage: ObservableObject {
         "ai.loading": [.pt: "Analisando candles...", .en: "Analyzing candles..."],
         "ai.updating": [.pt: "Atualizando análise...", .en: "Updating analysis..."],
         "ai.refresh": [.pt: "Atualizar análise IA", .en: "Refresh AI analysis"],
+        "ai.retry_cta": [.pt: "Tentar novamente", .en: "Try again"],
+        "ai.job.queued_title": [.pt: "Análise IA na fila", .en: "AI analysis queued"],
+        "ai.job.queued_message": [
+            .pt: "Este modelo é complexo e a análise pode demorar. Você pode sair desta tela; avisaremos quando estiver pronta.",
+            .en: "This model is complex and the analysis can take a while. You can leave this screen; we will notify you when it is ready."
+        ],
+        "ai.job.running_title": [.pt: "Análise IA em andamento", .en: "AI analysis running"],
+        "ai.job.running_message": [
+            .pt: "Estamos processando os candles e limitando a IA a uma análise por vez para manter o servidor estável.",
+            .en: "We are processing the candles and limiting AI to one analysis at a time to keep the server stable."
+        ],
+        "ai.job.retrying_title": [.pt: "Tentando novamente", .en: "Retrying analysis"],
+        "ai.job.retrying_message": [
+            .pt: "A tentativa %d de %d falhou. Vamos tentar novamente automaticamente.",
+            .en: "Attempt %d of %d failed. We will retry automatically."
+        ],
+        "ai.job.failed_title": [.pt: "A análise não finalizou", .en: "Analysis did not finish"],
+        "ai.job.failed_message": [
+            .pt: "A análise falhou após %d tentativas. Tente novamente quando quiser.",
+            .en: "The analysis failed after %d attempts. Try again whenever you are ready."
+        ],
+        "ai.job.succeeded_title": [.pt: "Análise pronta", .en: "Analysis ready"],
+        "ai.job.succeeded_message": [
+            .pt: "A Perspectiva IA terminou e foi atualizada abaixo.",
+            .en: "AI Outlook finished and has been updated below."
+        ],
+        "ai.job.attempts": [.pt: "Tentativa %d de %d", .en: "Attempt %d of %d"],
         "ai.copy_text": [.pt: "Copiar texto", .en: "Copy text"],
         "ai.copy_translate_toast": [
             .pt: "Texto copiado. Cole no seu tradutor favorito para traduzir.",
@@ -214,6 +241,12 @@ final class AppLanguage: ObservableObject {
         "ai.enable.loading_cta": [.pt: "Ativando Perspectiva IA...", .en: "Enabling AI Outlook..."],
         "ai.disable.cta": [.pt: "Desativar Perspectiva IA", .en: "Disable AI Outlook"],
         "ai.disable.loading_cta": [.pt: "Desativando Perspectiva IA...", .en: "Disabling AI Outlook..."],
+        "ai.disable.confirm_title": [.pt: "Desativar Perspectiva IA?", .en: "Disable AI Outlook?"],
+        "ai.disable.confirm_message": [
+            .pt: "Novas análises IA não serão geradas até você ativar o recurso novamente.",
+            .en: "New AI analyses will not be generated until you enable the feature again."
+        ],
+        "ai.disable.confirm_cta": [.pt: "Desativar", .en: "Disable"],
         "ai.source.paper": [.pt: "Paper científico", .en: "Research paper"],
         "ai.source.code": [.pt: "Código-fonte", .en: "Source code"],
         "ai.maintenance.title": [.pt: "Perspectiva IA em manutenção", .en: "AI Outlook is under maintenance"],

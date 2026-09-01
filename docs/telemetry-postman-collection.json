@@ -154,6 +154,364 @@
       ]
     },
     {
+      "name": "AI Outlook Jobs and Usage",
+      "item": [
+        {
+          "name": "Queue AI Outlook analysis job",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{API_BASE}}/users/{{USER_ID}}/ai-outlook/jobs",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "users",
+                "{{USER_ID}}",
+                "ai-outlook",
+                "jobs"
+              ]
+            },
+            "description": "Create or reuse a persisted AI Outlook job. The worker processes one job at a time and retries failed jobs before final failure.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"ticker\": \"{{TICKER}}\",\n    \"interval\": \"1d\",\n    \"range\": \"2y\",\n    \"horizon\": 10,\n    \"refresh\": false\n  }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Retry AI Outlook analysis job",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{API_BASE}}/users/{{USER_ID}}/ai-outlook/jobs",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "users",
+                "{{USER_ID}}",
+                "ai-outlook",
+                "jobs"
+              ]
+            },
+            "description": "Create a fresh AI Outlook job after a failed final attempt or when the app retry CTA is tapped.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"ticker\": \"{{TICKER}}\",\n    \"interval\": \"1d\",\n    \"range\": \"2y\",\n    \"horizon\": 10,\n    \"refresh\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get AI Outlook job status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{API_BASE}}/users/{{USER_ID}}/ai-outlook/jobs/{{AI_OUTLOOK_JOB_ID}}",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "users",
+                "{{USER_ID}}",
+                "ai-outlook",
+                "jobs",
+                "{{AI_OUTLOOK_JOB_ID}}"
+              ]
+            },
+            "description": "Poll a persisted AI Outlook job until status is succeeded or failed. Succeeded jobs include the analysis payload in result."
+          },
+          "response": []
+        },
+        {
+          "name": "List AI Outlook jobs",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Admin-Token",
+                "value": "{{ADMIN_TOKEN}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{API_BASE}}/admin/telemetry/ai-outlook/jobs?user_id={{USER_ID}}&ticker={{TICKER}}&limit=50",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "admin",
+                "telemetry",
+                "ai-outlook",
+                "jobs"
+              ],
+              "query": [
+                {
+                  "key": "user_id",
+                  "value": "{{USER_ID}}"
+                },
+                {
+                  "key": "ticker",
+                  "value": "{{TICKER}}"
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            },
+            "description": "Admin view of recent AI Outlook jobs, including status, attempts, failure reason, and notification status."
+          },
+          "response": []
+        },
+        {
+          "name": "List failed AI Outlook jobs",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Admin-Token",
+                "value": "{{ADMIN_TOKEN}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{API_BASE}}/admin/telemetry/ai-outlook/jobs?status=failed&limit=50",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "admin",
+                "telemetry",
+                "ai-outlook",
+                "jobs"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "failed"
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            },
+            "description": "Admin view of AI Outlook jobs that exhausted all retry attempts."
+          },
+          "response": []
+        },
+        {
+          "name": "List queued AI Outlook jobs",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Admin-Token",
+                "value": "{{ADMIN_TOKEN}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{API_BASE}}/admin/telemetry/ai-outlook/jobs?status=queued&limit=50",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "admin",
+                "telemetry",
+                "ai-outlook",
+                "jobs"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "queued"
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            },
+            "description": "Admin view of persisted AI Outlook jobs waiting for the single worker."
+          },
+          "response": []
+        },
+        {
+          "name": "List running AI Outlook jobs",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Admin-Token",
+                "value": "{{ADMIN_TOKEN}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{API_BASE}}/admin/telemetry/ai-outlook/jobs?status=running&limit=50",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "admin",
+                "telemetry",
+                "ai-outlook",
+                "jobs"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "running"
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            },
+            "description": "Admin view of AI Outlook jobs currently claimed by the worker."
+          },
+          "response": []
+        },
+        {
+          "name": "Summarize AI Outlook usage",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Admin-Token",
+                "value": "{{ADMIN_TOKEN}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{API_BASE}}/admin/telemetry/ai-outlook/usage?hours=24",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "admin",
+                "telemetry",
+                "ai-outlook",
+                "usage"
+              ],
+              "query": [
+                {
+                  "key": "hours",
+                  "value": "24"
+                }
+              ]
+            },
+            "description": "Count AI Outlook usage over a time window by total jobs, unique users, unique tickers, status, and ticker/status."
+          },
+          "response": []
+        },
+        {
+          "name": "Summarize one ticker AI Outlook usage",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Admin-Token",
+                "value": "{{ADMIN_TOKEN}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{API_BASE}}/admin/telemetry/ai-outlook/usage?ticker={{TICKER}}&hours=168",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "admin",
+                "telemetry",
+                "ai-outlook",
+                "usage"
+              ],
+              "query": [
+                {
+                  "key": "ticker",
+                  "value": "{{TICKER}}"
+                },
+                {
+                  "key": "hours",
+                  "value": "168"
+                }
+              ]
+            },
+            "description": "Count AI Outlook usage for one ticker over the last seven days."
+          },
+          "response": []
+        },
+        {
+          "name": "Summarize one user's AI Outlook usage",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Admin-Token",
+                "value": "{{ADMIN_TOKEN}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{API_BASE}}/admin/telemetry/ai-outlook/usage?user_id={{USER_ID}}&hours=168",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "admin",
+                "telemetry",
+                "ai-outlook",
+                "usage"
+              ],
+              "query": [
+                {
+                  "key": "user_id",
+                  "value": "{{USER_ID}}"
+                },
+                {
+                  "key": "hours",
+                  "value": "168"
+                }
+              ]
+            },
+            "description": "Count one user's AI Outlook jobs, statuses, tickers, and latest jobs over the last seven days."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
       "name": "IAP and Subscription Telemetry",
       "item": [
         {
@@ -1435,6 +1793,146 @@
           "response": []
         },
         {
+          "name": "List users",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Admin-Token",
+                "value": "{{ADMIN_TOKEN}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{API_BASE}}/admin/telemetry/users?limit=50",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "admin",
+                "telemetry",
+                "users"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            },
+            "description": "Generated from docs/telemetry-curls.md: List users with preference, device, alert, favorite, and AI Outlook usage counts."
+          },
+          "response": []
+        },
+        {
+          "name": "List one user's telemetry",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Admin-Token",
+                "value": "{{ADMIN_TOKEN}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{API_BASE}}/admin/telemetry/users?user_id={{USER_ID}}&limit=50",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "admin",
+                "telemetry",
+                "users"
+              ],
+              "query": [
+                {
+                  "key": "user_id",
+                  "value": "{{USER_ID}}"
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            },
+            "description": "Generated from docs/telemetry-curls.md: List one user's telemetry."
+          },
+          "response": []
+        },
+        {
+          "name": "List AI Outlook-enabled users",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Admin-Token",
+                "value": "{{ADMIN_TOKEN}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{API_BASE}}/admin/telemetry/users?ai_outlook_enabled=true&limit=50",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "admin",
+                "telemetry",
+                "users"
+              ],
+              "query": [
+                {
+                  "key": "ai_outlook_enabled",
+                  "value": "true"
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            },
+            "description": "Generated from docs/telemetry-curls.md: List users who enabled AI Outlook."
+          },
+          "response": []
+        },
+        {
+          "name": "List users with AI Outlook disabled",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Admin-Token",
+                "value": "{{ADMIN_TOKEN}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{API_BASE}}/admin/telemetry/users?ai_outlook_enabled=false&limit=50",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "admin",
+                "telemetry",
+                "users"
+              ],
+              "query": [
+                {
+                  "key": "ai_outlook_enabled",
+                  "value": "false"
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            },
+            "description": "List users who have not enabled AI Outlook, with device, favorite, alert, and job counts."
+          },
+          "response": []
+        },
+        {
           "name": "User devices",
           "request": {
             "method": "GET",
@@ -1557,6 +2055,11 @@
     {
       "key": "PRODUCT_ID",
       "value": "pro_year",
+      "type": "string"
+    },
+    {
+      "key": "AI_OUTLOOK_JOB_ID",
+      "value": "",
       "type": "string"
     }
   ]

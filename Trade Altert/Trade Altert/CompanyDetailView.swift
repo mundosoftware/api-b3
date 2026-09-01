@@ -7,6 +7,7 @@ struct CompanyDetailView: View {
     @EnvironmentObject private var language: AppLanguage
     @State private var company: Company
     @State private var aiAnalysis: DecisionSupportAnalysis?
+    @State private var aiJob: AIOutlookJob?
     @State private var aiHorizon = 10
     @State private var aiIsLoading = false
     @State private var aiError: String?
@@ -15,6 +16,7 @@ struct CompanyDetailView: View {
     @State private var aiCopyToastMessage: String?
     @State private var aiCopyToastID = UUID()
     @State private var showAIActivationDisclosure = false
+    @State private var showAIDeactivationConfirmation = false
 
     init(company: Company) {
         _company = State(initialValue: company)
@@ -22,6 +24,10 @@ struct CompanyDetailView: View {
 
     private var isFavorite: Bool {
         model.favorites.contains { $0.ticker == company.ticker }
+    }
+
+    private var shouldShowAIJobStatus: Bool {
+        aiJob?.status.isPending == true || aiJob?.status == .failed || (aiIsLoading && aiAnalysis == nil)
     }
 
     var body: some View {
@@ -135,6 +141,16 @@ struct CompanyDetailView: View {
         } message: {
             Text(language.text("ai.ftue.message"))
         }
+        .alert(language.text("ai.disable.confirm_title"), isPresented: $showAIDeactivationConfirmation) {
+            Button(language.text("action.cancel"), role: .cancel) {}
+            Button(language.text("ai.disable.confirm_cta"), role: .destructive) {
+                Task {
+                    await toggleAIOutlook()
+                }
+            }
+        } message: {
+            Text(language.text("ai.disable.confirm_message"))
+        }
     }
 
     private var aiSection: some View {
@@ -156,12 +172,8 @@ struct CompanyDetailView: View {
                 .pickerStyle(.segmented)
                 .disabled(aiIsLoading)
 
-                if aiIsLoading {
-                    HStack {
-                        ProgressView()
-                        Text(aiAnalysis == nil ? language.text("ai.loading") : language.text("ai.updating"))
-                            .foregroundStyle(.secondary)
-                    }
+                if shouldShowAIJobStatus {
+                    AIOutlookJobStatusView(job: aiJob, isLoading: aiIsLoading)
                 }
 
                 if let aiAnalysis {
@@ -172,29 +184,37 @@ struct CompanyDetailView: View {
                     )
                 }
 
-                if let aiError {
+                if let aiError, aiJob?.status != .failed {
                     Text(aiError)
                         .font(.footnote)
                         .foregroundStyle(.red)
                 }
 
-                Button {
-                    Task {
-                        await loadAIAnalysis(forceRefresh: true)
+                if aiJob?.status == .failed {
+                    Button {
+                        Task {
+                            await loadAIAnalysis(forceRefresh: true)
+                        }
+                    } label: {
+                        Label(language.text("ai.retry_cta"), systemImage: "arrow.clockwise")
                     }
-                } label: {
-                    Label(language.text("ai.refresh"), systemImage: "arrow.clockwise")
+                } else {
+                    Button {
+                        Task {
+                            await loadAIAnalysis(forceRefresh: true)
+                        }
+                    } label: {
+                        Label(language.text("ai.refresh"), systemImage: "arrow.clockwise")
+                    }
+                    .disabled(aiIsLoading)
                 }
-                .disabled(aiIsLoading)
 
                 AIOutlookActivationCTA(
                     isEnabled: true,
                     isLoading: aiToggleIsLoading,
                     role: .destructive
                 ) {
-                    Task {
-                        await toggleAIOutlook()
-                    }
+                    showAIDeactivationConfirmation = true
                 }
             }
         }
@@ -211,6 +231,7 @@ struct CompanyDetailView: View {
     private func loadAIAnalysis(forceRefresh: Bool = false) async {
         guard model.aiOutlookAvailable, model.aiOutlookEnabled else { return }
         let interval = "1d"
+        let range = "2y"
         let requestID = UUID()
         let requestHorizon = aiHorizon
         if !forceRefresh {
@@ -233,23 +254,53 @@ struct CompanyDetailView: View {
         aiRequestID = requestID
         aiIsLoading = true
         aiError = nil
+        if forceRefresh {
+            aiJob = nil
+        }
         do {
-            let analysis = try await CompanionAPIClient.shared.aiAnalysis(
+            let request = AIOutlookJobCreateRequest(
                 ticker: company.ticker,
                 interval: interval,
+                range: range,
                 horizon: requestHorizon,
-                forceRefresh: forceRefresh
+                refresh: forceRefresh
             )
-            if aiRequestID == requestID && model.aiOutlookAvailable && model.aiOutlookEnabled {
-                aiAnalysis = analysis
-                model.storeAIAnalysis(analysis)
+            var job = try await CompanionAPIClient.shared.createAIOutlookJob(
+                userId: model.userId,
+                request: request
+            )
+            handleAIJob(job, requestID: requestID)
+
+            while aiRequestID == requestID && job.status.isPending {
+                try await Task.sleep(nanoseconds: 3_000_000_000)
+                job = try await CompanionAPIClient.shared.aiOutlookJob(
+                    userId: model.userId,
+                    jobId: job.jobId
+                )
+                handleAIJob(job, requestID: requestID)
             }
+        } catch is CancellationError {
+            return
         } catch {
             if aiRequestID == requestID {
                 aiError = language.aiOutlookErrorText(error)
+                aiJob = nil
             }
         }
-        if aiRequestID == requestID {
+        if aiRequestID == requestID && aiJob?.status.isPending != true {
+            aiIsLoading = false
+        }
+    }
+
+    private func handleAIJob(_ job: AIOutlookJob, requestID: UUID) {
+        guard aiRequestID == requestID, model.aiOutlookAvailable, model.aiOutlookEnabled else { return }
+        aiJob = job
+        aiError = nil
+        if let analysis = job.result {
+            aiAnalysis = analysis
+            model.storeAIAnalysis(analysis)
+        }
+        if !job.status.isPending {
             aiIsLoading = false
         }
     }
@@ -276,6 +327,7 @@ struct CompanyDetailView: View {
         aiIsLoading = false
         aiError = nil
         aiAnalysis = nil
+        aiJob = nil
     }
 
     private func copyAITextForTranslation(_ text: String) {
@@ -309,6 +361,98 @@ struct AIOutlookMaintenanceView: View {
                 .foregroundStyle(.secondary)
         }
         .padding(.vertical, 6)
+    }
+}
+
+struct AIOutlookJobStatusView: View {
+    @EnvironmentObject private var language: AppLanguage
+
+    let job: AIOutlookJob?
+    let isLoading: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .center, spacing: 8) {
+                if job?.status.isPending == true || (job == nil && isLoading) {
+                    ProgressView()
+                }
+                Label(title, systemImage: icon)
+                    .font(.headline)
+            }
+
+            Text(message)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+
+            if let attemptText {
+                Text(attemptText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
+        }
+        .padding(.vertical, 6)
+    }
+
+    private var title: String {
+        guard let job else {
+            return language.text("ai.job.queued_title")
+        }
+        switch job.status {
+        case .queued:
+            return job.attemptCount > 0 ? language.text("ai.job.retrying_title") : language.text("ai.job.queued_title")
+        case .running:
+            return language.text("ai.job.running_title")
+        case .succeeded:
+            return language.text("ai.job.succeeded_title")
+        case .failed:
+            return language.text("ai.job.failed_title")
+        }
+    }
+
+    private var message: String {
+        guard let job else {
+            return language.text("ai.job.queued_message")
+        }
+        switch job.status {
+        case .queued:
+            if job.attemptCount > 0 {
+                return String(
+                    format: language.text("ai.job.retrying_message"),
+                    job.attemptCount,
+                    job.maxAttempts
+                )
+            }
+            return language.text("ai.job.queued_message")
+        case .running:
+            return language.text("ai.job.running_message")
+        case .succeeded:
+            return language.text("ai.job.succeeded_message")
+        case .failed:
+            return String(format: language.text("ai.job.failed_message"), job.maxAttempts)
+        }
+    }
+
+    private var attemptText: String? {
+        guard let job, job.status != .succeeded else { return nil }
+        return String(
+            format: language.text("ai.job.attempts"),
+            min(max(job.attemptCount, 1), job.maxAttempts),
+            job.maxAttempts
+        )
+    }
+
+    private var icon: String {
+        switch job?.status {
+        case .failed:
+            return "exclamationmark.triangle"
+        case .succeeded:
+            return "checkmark.circle"
+        case .running:
+            return "brain.head.profile"
+        default:
+            return "hourglass"
+        }
     }
 }
 

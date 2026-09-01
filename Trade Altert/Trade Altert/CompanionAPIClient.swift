@@ -99,6 +99,18 @@ actor CompanionAPIClient {
         )
     }
 
+    func createAIOutlookJob(
+        userId: String,
+        request: AIOutlookJobCreateRequest
+    ) async throws -> AIOutlookJob {
+        try await send("/users/\(userId)/ai-outlook/jobs", method: "POST", body: request)
+    }
+
+    func aiOutlookJob(userId: String, jobId: String) async throws -> AIOutlookJob {
+        let encodedJobId = jobId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? jobId
+        return try await send("/users/\(userId)/ai-outlook/jobs/\(encodedJobId)")
+    }
+
     func favorites(userId: String) async throws -> [Favorite] {
         let response: FavoriteListResponse = try await send("/users/\(userId)/favorites")
         return response.result

@@ -25,7 +25,7 @@ cp local.env.example local.env
 For setup without starting the server:
 
 ```bash
-./scripts/deploy_vps.sh local --no-start
+sudo bash scripts/deploy_vps.sh local --no-start
 ```
 
 Local mode creates `venv`, installs dependencies, initializes SQLite at `LOCAL_DATABASE_PATH`, disables the background checker and OneSignal by default through `LOCAL_CHECK_LOOP_ENABLED=false` and `LOCAL_ONESIGNAL_ENABLED=false`, then starts Uvicorn with reload.
@@ -41,6 +41,10 @@ Important env vars:
 - `CHECK_LOOP_SECONDS`: background scheduler interval.
 - `QUOTE_CACHE_TTL_SECONDS`: quote cache age before a live refresh.
 - `AI_OUTLOOK_GLOBAL_ENABLED`: initial global AI Outlook availability seeded into the database.
+- `AI_OUTLOOK_WORKER_ENABLED`: starts the persisted AI Outlook job worker.
+- `AI_OUTLOOK_WORKER_POLL_SECONDS`: idle polling interval for queued AI Outlook jobs.
+- `AI_OUTLOOK_JOB_MAX_ATTEMPTS`: total job attempts, default `3` for one initial run plus two retries.
+- `AI_OUTLOOK_RETRY_DELAY_SECONDS`: delay before retrying a failed AI Outlook attempt.
 - `CANDLE_CACHE_TTL_SECONDS`: Yahoo chart candle cache age.
 - `PREDICTION_CACHE_TTL_SECONDS`: AI Outlook prediction cache age.
 - `KRONOS_ENABLED`: enables Kronos-backed forecasting when its source/dependencies are available.
@@ -60,6 +64,8 @@ Main endpoints:
 - `GET /companies/{ticker}?refresh=true`
 - `GET /companies/{ticker}/candles?range=6mo&interval=1d`
 - `GET /companies/{ticker}/ai-analysis?horizon=10&range=6mo&refresh=true`
+- `POST /users/{user_id}/ai-outlook/jobs`
+- `GET /users/{user_id}/ai-outlook/jobs/{job_id}`
 - `PUT /users/{user_id}`
 - `GET /users/{user_id}/notification-preferences`
 - `PUT /users/{user_id}/notification-preferences`
@@ -79,8 +85,11 @@ Main endpoints:
 - `GET /admin/telemetry/alert-status`
 - `GET /admin/telemetry/alert-runs`
 - `GET /admin/telemetry/alert-events`
+- `GET /admin/telemetry/ai-outlook/jobs`
+- `GET /admin/telemetry/ai-outlook/usage`
 - `GET /admin/telemetry/notifications`
 - `GET /admin/telemetry/devices`
+- `GET /admin/telemetry/users`
 - `GET /admin/telemetry/failures`
 
 When OneSignal/APNs reports stale push subscriptions during alert delivery, the server deletes the matching OneSignal subscriptions and removes the corresponding `user_devices` rows. This is the reliable cleanup point for uninstalls: Apple can delay invalid-token reporting, so removal may happen only after later send attempts. The explicit unregister endpoint is for cases where a client can still call the API, such as logout or a deliberate local notification cleanup.
@@ -91,12 +100,12 @@ Telemetry endpoints require the same `X-Admin-Token` as `POST /admin/run-checks`
 
 AI Outlook is off for each user by default. The iOS app shows the benefits, Kronos paper/source links, and a centered text CTA that can activate or deactivate the feature for that user. First activation presents a disclosure that AI output can be wrong, market data can be stale, and the result is decision support rather than investment advice. When the global admin flag is disabled, the app shows the AI Outlook maintenance UI and the backend returns the public feature state from `GET /features/ai-outlook`.
 
-The backend fetches free Yahoo chart candles, caches candle and prediction results in SQLite, runs Kronos when configured, and returns a decision-support payload with direction, confidence, suggested action, support/resistance, target/risk prices, forecast candles, warning text, and chart-ready historical/forecast series. If Kronos is unavailable and `KRONOS_REQUIRED=false`, the service uses the statistical fallback so the UI and local tests still work.
+The backend fetches free Yahoo chart candles, caches candle and prediction results in SQLite, runs Kronos when configured, and stores AI Outlook work in persisted jobs. The iOS app creates a job through `POST /users/{user_id}/ai-outlook/jobs`, polls `GET /users/{user_id}/ai-outlook/jobs/{job_id}`, and receives a push notification when the job succeeds or exhausts retries. The deployed worker processes one AI Outlook job at a time, retries failed jobs twice by default, and returns the decision-support payload in the job `result` when complete. If Kronos is unavailable and `KRONOS_REQUIRED=false`, the service uses the statistical fallback so the UI and local tests still work.
 
 Local AI validation:
 
 ```bash
-./scripts/run_ai_local.sh --install-kronos
+sudo bash scripts/run_ai_local.sh --install-kronos
 ```
 
 Useful options:

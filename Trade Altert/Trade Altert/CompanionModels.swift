@@ -137,6 +137,67 @@ struct AIOutlookFeatureStatus: Codable {
     }
 }
 
+enum AIOutlookJobStatus: String, Codable, Equatable {
+    case queued
+    case running
+    case succeeded
+    case failed
+
+    var isPending: Bool {
+        self == .queued || self == .running
+    }
+}
+
+struct AIOutlookJob: Codable, Identifiable {
+    var id: String { jobId }
+
+    let jobId: String
+    let userId: String
+    let ticker: String
+    let interval: String
+    let range: String
+    let horizon: Int
+    let refresh: Bool
+    let status: AIOutlookJobStatus
+    let attemptCount: Int
+    let maxAttempts: Int
+    let queuedAt: String
+    let startedAt: String?
+    let finishedAt: String?
+    let nextAttemptAt: String?
+    let failureReason: String?
+    let notificationStatus: String?
+    let result: DecisionSupportAnalysis?
+
+    enum CodingKeys: String, CodingKey {
+        case jobId = "job_id"
+        case userId = "user_id"
+        case ticker
+        case interval
+        case range
+        case horizon
+        case refresh
+        case status
+        case attemptCount = "attempt_count"
+        case maxAttempts = "max_attempts"
+        case queuedAt = "queued_at"
+        case startedAt = "started_at"
+        case finishedAt = "finished_at"
+        case nextAttemptAt = "next_attempt_at"
+        case failureReason = "failure_reason"
+        case notificationStatus = "notification_status"
+        case result
+    }
+}
+
+struct AIOutlookJobCreateRequest: Encodable {
+    let ticker: String
+    let interval: String
+    let range: String
+    let horizon: Int
+    let refresh: Bool
+}
+
 struct Favorite: Codable, Identifiable {
     var id: String { ticker }
     let ticker: String

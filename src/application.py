@@ -8,6 +8,7 @@ from fastapi import FastAPI, Header, HTTPException, Query, Response, status
 from fastapi.concurrency import run_in_threadpool
 
 from src.ai_analysis import DecisionSupportService, PredictionError
+from src.ai_outlook_jobs import AIOutlookJobProcessor, run_ai_outlook_job_loop
 from src.alerts import AlertEngine
 from src.candles import CandleLookupError, CandleService
 from src.config import Settings, get_settings
@@ -20,6 +21,11 @@ from src.models import (
     AlertEventLogListOut,
     AlertRunLogListOut,
     AlertTelemetryStatusListOut,
+    AIOutlookJobCreateRequest,
+    AIOutlookJobListOut,
+    AIOutlookJobOut,
+    AIOutlookJobStatus,
+    AIOutlookUsageSummaryOut,
     CandleInterval,
     CandleListOut,
     CandleRange,
@@ -53,6 +59,7 @@ from src.models import (
     QuoteOut,
     RunChecksOut,
     TelemetryFailureListOut,
+    UserTelemetryListOut,
     UserOut,
     UserUpsertRequest,
 )
@@ -70,19 +77,28 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     decision_support = DecisionSupportService(repository, settings, candle_service)
     onesignal = OneSignalClient(settings)
     alert_engine = AlertEngine(repository, ticker_service, onesignal, settings)
+    ai_outlook_processor = AIOutlookJobProcessor(
+        repository,
+        decision_support,
+        onesignal,
+        settings,
+    )
     telemetry = TelemetryService(repository, alert_engine)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         init_db(settings)
-        task: asyncio.Task | None = None
+        tasks: list[asyncio.Task] = []
         if settings.check_loop_enabled:
-            task = asyncio.create_task(_check_loop(alert_engine, settings))
+            tasks.append(asyncio.create_task(_check_loop(alert_engine, settings)))
+        if settings.ai_outlook_worker_enabled:
+            tasks.append(asyncio.create_task(run_ai_outlook_job_loop(ai_outlook_processor, settings)))
         try:
             yield
         finally:
-            if task:
+            for task in tasks:
                 task.cancel()
+            for task in tasks:
                 try:
                     await task
                 except asyncio.CancelledError:
@@ -104,6 +120,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "onesignal_watchos_configured": onesignal.watchos_configured,
             "check_loop_enabled": settings.check_loop_enabled,
             "ai_outlook_global_enabled": ai_outlook_enabled,
+            "ai_outlook_worker_enabled": settings.ai_outlook_worker_enabled,
+            "ai_outlook_job_max_attempts": settings.ai_outlook_job_max_attempts,
             "kronos_enabled": settings.kronos_enabled,
         }
 
@@ -188,6 +206,59 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
         except (CandleLookupError, PredictionError) as exc:
             raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+    @app.post(
+        "/users/{user_id}/ai-outlook/jobs",
+        response_model=AIOutlookJobOut,
+        status_code=status.HTTP_201_CREATED,
+    )
+    async def create_ai_outlook_job(
+        user_id: str,
+        request: AIOutlookJobCreateRequest,
+    ) -> AIOutlookJobOut:
+        if not repository.ai_outlook_feature_enabled():
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="AI Outlook is temporarily unavailable",
+            )
+        try:
+            active_job = repository.find_active_ai_outlook_job(
+                user_id=user_id,
+                ticker=request.ticker,
+                interval=request.interval,
+                range_name=request.range,
+                horizon=request.horizon,
+            )
+            if active_job:
+                return AIOutlookJobOut(**active_job)
+
+            cached = None
+            if not request.refresh:
+                cached = decision_support.cached_analysis(
+                    request.ticker,
+                    interval=request.interval,
+                    horizon=request.horizon,
+                )
+            job = repository.create_ai_outlook_job(
+                user_id=user_id,
+                ticker=request.ticker,
+                interval=request.interval,
+                range_name=request.range,
+                horizon=request.horizon,
+                refresh=request.refresh,
+                max_attempts=settings.ai_outlook_job_max_attempts,
+                result=cached,
+            )
+            return AIOutlookJobOut(**job)
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    @app.get("/users/{user_id}/ai-outlook/jobs/{job_id}", response_model=AIOutlookJobOut)
+    async def get_ai_outlook_job(user_id: str, job_id: str) -> AIOutlookJobOut:
+        job = repository.get_ai_outlook_job(user_id, job_id)
+        if not job:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="AI Outlook job not found")
+        return AIOutlookJobOut(**job)
 
     @app.put("/users/{user_id}", response_model=UserOut)
     async def upsert_user(user_id: str, request: UserUpsertRequest) -> UserOut:
@@ -470,6 +541,40 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )
         )
 
+    @app.get("/admin/telemetry/ai-outlook/jobs", response_model=AIOutlookJobListOut)
+    async def telemetry_ai_outlook_jobs(
+        x_admin_token: str | None = Header(default=None),
+        status_filter: AIOutlookJobStatus | None = Query(default=None, alias="status"),
+        user_id: str | None = Query(default=None),
+        ticker: str | None = Query(default=None),
+        limit: int = Query(default=100, ge=1, le=500),
+    ) -> AIOutlookJobListOut:
+        require_admin(x_admin_token)
+        return AIOutlookJobListOut(
+            result=repository.list_ai_outlook_jobs(
+                limit=limit,
+                status=status_filter,
+                user_id=user_id,
+                ticker=ticker,
+            )
+        )
+
+    @app.get("/admin/telemetry/ai-outlook/usage", response_model=AIOutlookUsageSummaryOut)
+    async def telemetry_ai_outlook_usage(
+        x_admin_token: str | None = Header(default=None),
+        user_id: str | None = Query(default=None),
+        ticker: str | None = Query(default=None),
+        hours: int = Query(default=24, ge=1, le=8760),
+    ) -> AIOutlookUsageSummaryOut:
+        require_admin(x_admin_token)
+        return AIOutlookUsageSummaryOut(
+            **repository.summarize_ai_outlook_usage(
+                hours=hours,
+                user_id=user_id,
+                ticker=ticker,
+            )
+        )
+
     @app.get("/admin/telemetry/iap-events", response_model=IAPTelemetryEventListOut)
     async def telemetry_iap_events(
         x_admin_token: str | None = Header(default=None),
@@ -644,6 +749,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 limit=limit,
                 user_id=user_id,
                 platform=platform,
+            )
+        )
+
+    @app.get("/admin/telemetry/users", response_model=UserTelemetryListOut)
+    async def telemetry_users(
+        x_admin_token: str | None = Header(default=None),
+        user_id: str | None = Query(default=None),
+        ai_outlook_enabled: bool | None = Query(default=None),
+        limit: int = Query(default=100, ge=1, le=500),
+    ) -> UserTelemetryListOut:
+        require_admin(x_admin_token)
+        return UserTelemetryListOut(
+            result=repository.list_user_telemetry(
+                limit=limit,
+                user_id=user_id,
+                ai_outlook_enabled=ai_outlook_enabled,
             )
         )
 

@@ -10,6 +10,7 @@ Replace these placeholders:
 - `{{ADMIN_TOKEN}}`: the value from `{{ADMIN_TOKEN}}` in `local.env`.
 - `{{USER_ID}}`: the app user id to inspect.
 - `{{TICKER}}`: ticker to inspect.
+- `{{AI_OUTLOOK_JOB_ID}}`: job id returned by `POST /users/{{USER_ID}}/ai-outlook/jobs`.
 - `{{PRODUCT_ID}}`: StoreKit product id, for example `pro_year`, `pro_month`, or `lifetime_unlock`.
 
 The server-owned trial product id is `trial_7_days`.
@@ -49,6 +50,40 @@ curl --request PUT "{{API_BASE}}/admin/features/ai-outlook" \
   --header "X-Admin-Token: {{ADMIN_TOKEN}}" \
   --header "Content-Type: application/json" \
   --data '{"enabled": true}'
+```
+
+Queue an AI Outlook analysis job:
+
+```bash
+curl --request POST "{{API_BASE}}/users/{{USER_ID}}/ai-outlook/jobs" \
+  --header "Content-Type: application/json" \
+  --data '{
+    "ticker": "{{TICKER}}",
+    "interval": "1d",
+    "range": "2y",
+    "horizon": 10,
+    "refresh": false
+  }'
+```
+
+Poll an AI Outlook analysis job:
+
+```bash
+curl --request GET "{{API_BASE}}/users/{{USER_ID}}/ai-outlook/jobs/{{AI_OUTLOOK_JOB_ID}}"
+```
+
+List recent AI Outlook jobs:
+
+```bash
+curl --request GET "{{API_BASE}}/admin/telemetry/ai-outlook/jobs?user_id={{USER_ID}}&ticker={{TICKER}}&limit=50" \
+  --header "X-Admin-Token: {{ADMIN_TOKEN}}"
+```
+
+Count AI Outlook usage over the last 24 hours:
+
+```bash
+curl --request GET "{{API_BASE}}/admin/telemetry/ai-outlook/usage?hours=24" \
+  --header "X-Admin-Token: {{ADMIN_TOKEN}}"
 ```
 
 Record a paywall view from the app:
@@ -318,6 +353,24 @@ List only watchOS devices, including `ai_outlook_enabled`:
 
 ```bash
 curl --request GET "{{API_BASE}}/admin/telemetry/devices?user_id={{USER_ID}}&platform=watchos&limit=50" --header "X-Admin-Token: {{ADMIN_TOKEN}}"
+```
+
+List users with preference, device, alert, favorite, and AI Outlook usage counts:
+
+```bash
+curl --request GET "{{API_BASE}}/admin/telemetry/users?limit=50" --header "X-Admin-Token: {{ADMIN_TOKEN}}"
+```
+
+List one user's telemetry:
+
+```bash
+curl --request GET "{{API_BASE}}/admin/telemetry/users?user_id={{USER_ID}}&limit=50" --header "X-Admin-Token: {{ADMIN_TOKEN}}"
+```
+
+List users who enabled AI Outlook:
+
+```bash
+curl --request GET "{{API_BASE}}/admin/telemetry/users?ai_outlook_enabled=true&limit=50" --header "X-Admin-Token: {{ADMIN_TOKEN}}"
 ```
 
 List combined failures and reasons from alert events plus notification logs:

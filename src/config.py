@@ -20,6 +20,10 @@ class Settings(BaseModel):
     check_loop_enabled: bool = True
     default_timezone: str = "America/Sao_Paulo"
     ai_outlook_global_enabled: bool = True
+    ai_outlook_worker_enabled: bool = True
+    ai_outlook_worker_poll_seconds: int = 2
+    ai_outlook_job_max_attempts: int = 3
+    ai_outlook_retry_delay_seconds: int = 15
     kronos_enabled: bool = True
     kronos_required: bool = False
     kronos_repo_path: str | None = None
@@ -78,6 +82,28 @@ class Settings(BaseModel):
             ai_outlook_global_enabled=env_bool(
                 "AI_OUTLOOK_GLOBAL_ENABLED",
                 cls.model_fields["ai_outlook_global_enabled"].default,
+            ),
+            ai_outlook_worker_enabled=env_bool(
+                "AI_OUTLOOK_WORKER_ENABLED",
+                cls.model_fields["ai_outlook_worker_enabled"].default,
+            ),
+            ai_outlook_worker_poll_seconds=int(
+                os.getenv(
+                    "AI_OUTLOOK_WORKER_POLL_SECONDS",
+                    cls.model_fields["ai_outlook_worker_poll_seconds"].default,
+                )
+            ),
+            ai_outlook_job_max_attempts=int(
+                os.getenv(
+                    "AI_OUTLOOK_JOB_MAX_ATTEMPTS",
+                    cls.model_fields["ai_outlook_job_max_attempts"].default,
+                )
+            ),
+            ai_outlook_retry_delay_seconds=int(
+                os.getenv(
+                    "AI_OUTLOOK_RETRY_DELAY_SECONDS",
+                    cls.model_fields["ai_outlook_retry_delay_seconds"].default,
+                )
             ),
             kronos_enabled=env_bool("KRONOS_ENABLED", cls.model_fields["kronos_enabled"].default),
             kronos_required=env_bool("KRONOS_REQUIRED", cls.model_fields["kronos_required"].default),

@@ -213,15 +213,9 @@ class DecisionSupportService:
         normalized = normalize_ticker(ticker)
         horizon = max(1, min(horizon, 60))
         lookback = max(MIN_LOOKBACK, min(self.settings.kronos_max_context, 512))
-        cache_model_name = self.settings.kronos_model_name if self.settings.kronos_enabled else self.fallback_forecaster.model_name
+        cache_model_name = self._cache_model_name()
         if not force_refresh:
-            cached = self.repository.get_prediction_cache(
-                normalized,
-                interval,
-                horizon,
-                lookback,
-                cache_model_name,
-            )
+            cached = self.cached_analysis(normalized, interval, horizon)
             if cached:
                 return cached
 
@@ -273,6 +267,28 @@ class DecisionSupportService:
             ttl_seconds=self.settings.prediction_cache_ttl_seconds,
         )
         return response
+
+    def cached_analysis(
+        self,
+        ticker: str,
+        interval: str = "1d",
+        horizon: int = 10,
+    ) -> dict[str, Any] | None:
+        normalized = normalize_ticker(ticker)
+        horizon = max(1, min(horizon, 60))
+        lookback = max(MIN_LOOKBACK, min(self.settings.kronos_max_context, 512))
+        return self.repository.get_prediction_cache(
+            normalized,
+            interval,
+            horizon,
+            lookback,
+            self._cache_model_name(),
+        )
+
+    def _cache_model_name(self) -> str:
+        if self.settings.kronos_enabled:
+            return self.settings.kronos_model_name
+        return self.fallback_forecaster.model_name
 
     def _decision_payload(
         self,
