@@ -249,6 +249,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 max_attempts=settings.ai_outlook_job_max_attempts,
                 result=cached,
             )
+            if cached is not None and job["status"] == "succeeded":
+                job = await run_in_threadpool(ai_outlook_processor.notify_succeeded_job, job)
             return AIOutlookJobOut(**job)
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
@@ -256,6 +258,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/users/{user_id}/ai-outlook/jobs/{job_id}", response_model=AIOutlookJobOut)
     async def get_ai_outlook_job(user_id: str, job_id: str) -> AIOutlookJobOut:
         job = repository.get_ai_outlook_job(user_id, job_id)
+        if not job:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="AI Outlook job not found")
+        return AIOutlookJobOut(**job)
+
+    @app.delete("/users/{user_id}/ai-outlook/jobs/{job_id}", response_model=AIOutlookJobOut)
+    async def cancel_ai_outlook_job(user_id: str, job_id: str) -> AIOutlookJobOut:
+        job = repository.cancel_ai_outlook_job(user_id, job_id)
         if not job:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="AI Outlook job not found")
         return AIOutlookJobOut(**job)

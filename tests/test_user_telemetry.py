@@ -51,6 +51,7 @@ class UserTelemetryTest(unittest.TestCase):
             )
             repository.create_ai_outlook_job("user-a", "PETR4", status="succeeded")
             repository.create_ai_outlook_job("user-a", "VALE3", status="failed")
+            repository.create_ai_outlook_job("user-a", "BBAS3", status="canceled")
             repository.upsert_user("user-b")
 
             app = create_app(settings)
@@ -101,6 +102,7 @@ class UserTelemetryTest(unittest.TestCase):
             self.assertFalse(default_user.ai_outlook_enabled)
             self.assertEqual(default_user.device_count, 0)
             self.assertEqual(default_user.ai_outlook_job_count, 0)
+            self.assertEqual(default_user.ai_outlook_canceled_count, 0)
 
             user = one_user.result[0]
             self.assertEqual(user.user_id, "user-a")
@@ -115,9 +117,10 @@ class UserTelemetryTest(unittest.TestCase):
             self.assertEqual(user.favorite_count, 1)
             self.assertEqual(user.alert_count, 1)
             self.assertEqual(user.enabled_alert_count, 1)
-            self.assertEqual(user.ai_outlook_job_count, 2)
+            self.assertEqual(user.ai_outlook_job_count, 3)
             self.assertEqual(user.ai_outlook_succeeded_count, 1)
             self.assertEqual(user.ai_outlook_failed_count, 1)
+            self.assertEqual(user.ai_outlook_canceled_count, 1)
             self.assertIsNotNone(user.latest_ai_outlook_job_at)
             self.assertIsNotNone(user.latest_seen_at)
 

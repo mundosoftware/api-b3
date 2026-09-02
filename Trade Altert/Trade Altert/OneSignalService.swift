@@ -39,6 +39,20 @@ final class OneSignalService {
         return !id.isEmpty && !id.hasPrefix("local-")
     }
 
+    func waitForUsablePushSubscription(timeoutSeconds: Double = 4) async -> String? {
+        let deadline = Date().addingTimeInterval(timeoutSeconds)
+        while Date() < deadline {
+            if let id = currentPushSubscriptionId, !id.isEmpty, !id.hasPrefix("local-") {
+                return id
+            }
+            try? await Task.sleep(nanoseconds: 250_000_000)
+        }
+        guard let id = currentPushSubscriptionId, !id.isEmpty, !id.hasPrefix("local-") else {
+            return nil
+        }
+        return id
+    }
+
     func notificationAuthorizationStatus() async -> UNAuthorizationStatus {
         await withCheckedContinuation { continuation in
             UNUserNotificationCenter.current().getNotificationSettings { settings in

@@ -66,6 +66,7 @@ Main endpoints:
 - `GET /companies/{ticker}/ai-analysis?horizon=10&range=6mo&refresh=true`
 - `POST /users/{user_id}/ai-outlook/jobs`
 - `GET /users/{user_id}/ai-outlook/jobs/{job_id}`
+- `DELETE /users/{user_id}/ai-outlook/jobs/{job_id}`
 - `PUT /users/{user_id}`
 - `GET /users/{user_id}/notification-preferences`
 - `PUT /users/{user_id}/notification-preferences`

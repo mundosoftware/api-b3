@@ -28,6 +28,15 @@ class AIOutlookJobProcessor:
     def requeue_running_jobs(self) -> int:
         return self.repository.requeue_running_ai_outlook_jobs()
 
+    def notify_succeeded_job(self, job: dict[str, Any]) -> dict[str, Any]:
+        if job["status"] != "succeeded":
+            return job
+        notification_status = self._notify_job(job, succeeded=True)
+        return self.repository.update_ai_outlook_job_notification_status(
+            job["job_id"],
+            notification_status,
+        ) or job
+
     def run_once(self) -> bool:
         job = self.repository.claim_next_ai_outlook_job()
         if job is None:

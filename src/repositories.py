@@ -863,7 +863,7 @@ class Repository:
         now = utc_now_iso()
         result_json = json.dumps(result, separators=(",", ":")) if result is not None else None
         job_status = status or ("succeeded" if result is not None else "queued")
-        finished_at = now if job_status in {"succeeded", "failed"} else None
+        finished_at = now if job_status in {"succeeded", "failed", "canceled"} else None
         with self.database.connect() as db:
             self._ensure_company(db, normalized)
             db.execute(
@@ -935,6 +935,37 @@ class Repository:
             ).fetchone()
             return ai_outlook_job_from_row(row) if row else None
 
+    def cancel_ai_outlook_job(
+        self,
+        user_id: str,
+        job_id: str,
+        now: datetime | None = None,
+    ) -> dict[str, Any] | None:
+        finished_at = self._coerce_utc(now or datetime.now(UTC)).replace(microsecond=0).isoformat()
+        with self.database.connect() as db:
+            db.execute(
+                """
+                UPDATE ai_outlook_jobs SET
+                    status = 'canceled',
+                    finished_at = ?,
+                    next_attempt_at = NULL,
+                    notification_status = 'canceled_by_user'
+                WHERE user_id = ?
+                    AND job_id = ?
+                    AND status IN ('queued', 'running', 'canceled')
+                """,
+                (finished_at, user_id, job_id),
+            )
+            row = db.execute(
+                """
+                SELECT *
+                FROM ai_outlook_jobs
+                WHERE user_id = ? AND job_id = ?
+                """,
+                (user_id, job_id),
+            ).fetchone()
+            return ai_outlook_job_from_row(row) if row else None
+
     def claim_next_ai_outlook_job(self, now: datetime | None = None) -> dict[str, Any] | None:
         checked_at = self._coerce_utc(now or datetime.now(UTC)).replace(microsecond=0)
         checked_at_iso = checked_at.isoformat()
@@ -978,7 +1009,7 @@ class Repository:
     ) -> dict[str, Any] | None:
         finished_at = self._coerce_utc(now or datetime.now(UTC)).replace(microsecond=0).isoformat()
         with self.database.connect() as db:
-            db.execute(
+            cursor = db.execute(
                 """
                 UPDATE ai_outlook_jobs SET
                     status = 'succeeded',
@@ -987,7 +1018,7 @@ class Repository:
                     result_json = ?,
                     failure_reason = NULL,
                     notification_status = COALESCE(?, notification_status)
-                WHERE job_id = ?
+                WHERE job_id = ? AND status = 'running'
                 """,
                 (
                     finished_at,
@@ -996,6 +1027,8 @@ class Repository:
                     job_id,
                 ),
             )
+            if cursor.rowcount == 0:
+                return None
             row = db.execute(
                 "SELECT * FROM ai_outlook_jobs WHERE job_id = ?",
                 (job_id,),
@@ -1017,6 +1050,8 @@ class Repository:
             ).fetchone()
             if row is None:
                 return None
+            if row["status"] != "running":
+                return ai_outlook_job_from_row(row)
             if row["attempt_count"] < row["max_attempts"]:
                 next_attempt_at = checked_at + timedelta(seconds=max(0, retry_delay_seconds))
                 db.execute(
@@ -2382,6 +2417,10 @@ class Repository:
                         WHERE j.user_id = u.user_id AND j.status = 'failed'
                     ) AS ai_outlook_failed_count,
                     (
+                        SELECT COUNT(*) FROM ai_outlook_jobs j
+                        WHERE j.user_id = u.user_id AND j.status = 'canceled'
+                    ) AS ai_outlook_canceled_count,
+                    (
                         SELECT MAX(j.queued_at) FROM ai_outlook_jobs j
                         WHERE j.user_id = u.user_id
                     ) AS latest_ai_outlook_job_at
@@ -2410,6 +2449,7 @@ class Repository:
                     "ai_outlook_job_count": row["ai_outlook_job_count"],
                     "ai_outlook_succeeded_count": row["ai_outlook_succeeded_count"],
                     "ai_outlook_failed_count": row["ai_outlook_failed_count"],
+                    "ai_outlook_canceled_count": row["ai_outlook_canceled_count"],
                     "latest_ai_outlook_job_at": row["latest_ai_outlook_job_at"],
                     "latest_seen_at": row["latest_seen_at"],
                     "created_at": row["created_at"],

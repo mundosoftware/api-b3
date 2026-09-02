@@ -142,6 +142,7 @@ enum AIOutlookJobStatus: String, Codable, Equatable {
     case running
     case succeeded
     case failed
+    case canceled
 
     var isPending: Bool {
         self == .queued || self == .running

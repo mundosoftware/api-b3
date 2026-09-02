@@ -72,6 +72,12 @@ Poll an AI Outlook analysis job:
 curl --request GET "{{API_BASE}}/users/{{USER_ID}}/ai-outlook/jobs/{{AI_OUTLOOK_JOB_ID}}"
 ```
 
+Cancel an in-progress AI Outlook analysis job:
+
+```bash
+curl --request DELETE "{{API_BASE}}/users/{{USER_ID}}/ai-outlook/jobs/{{AI_OUTLOOK_JOB_ID}}"
+```
+
 List recent AI Outlook jobs:
 
 ```bash
@@ -83,6 +89,13 @@ Count AI Outlook usage over the last 24 hours:
 
 ```bash
 curl --request GET "{{API_BASE}}/admin/telemetry/ai-outlook/usage?hours=24" \
+  --header "X-Admin-Token: {{ADMIN_TOKEN}}"
+```
+
+List canceled AI Outlook jobs:
+
+```bash
+curl --request GET "{{API_BASE}}/admin/telemetry/ai-outlook/jobs?status=canceled&limit=50" \
   --header "X-Admin-Token: {{ADMIN_TOKEN}}"
 ```
 

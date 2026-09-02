@@ -18,6 +18,7 @@ final class CompanionAppModel: ObservableObject {
 
     private let api = CompanionAPIClient.shared
     private var aiAnalysisCache: [AIAnalysisCacheKey: DecisionSupportAnalysis] = [:]
+    private var persistedAIOutlookJobs = AIOutlookJobStateStore.load()
     private var userIdWasGenerated: Bool
 
     var iosNotificationsEnabled: Bool {
@@ -168,6 +169,14 @@ final class CompanionAppModel: ObservableObject {
                 watchosEnabled: nil,
                 aiOutlookEnabled: enabled
             )
+            if enabled, self.preferences?.iosEnabled != false {
+                let accepted = await OneSignalService.shared.requestPushPermission()
+                if accepted {
+                    try await self.registerIOSDeviceIfEnabled(waitForSubscription: true)
+                } else {
+                    errorMessage = AppLanguage.shared.text("message.notifications_disabled")
+                }
+            }
         } catch {
             errorMessage = AppLanguage.shared.aiOutlookErrorText(error)
         }
@@ -197,6 +206,62 @@ final class CompanionAppModel: ObservableObject {
             interval: analysis.interval,
             horizon: analysis.horizon
         )] = analysis
+    }
+
+    func storedAIOutlookJob(
+        ticker: String,
+        interval: String,
+        range: String,
+        horizon: Int
+    ) -> AIOutlookJob? {
+        let key = AIOutlookJobStorageKey(
+            userId: userId,
+            ticker: ticker,
+            interval: interval,
+            range: range,
+            horizon: horizon
+        )
+        return persistedAIOutlookJobs.last { $0.key == key }?.job
+    }
+
+    func storeAIOutlookJob(_ job: AIOutlookJob) {
+        if job.status == .canceled {
+            clearAIOutlookJob(job)
+            return
+        }
+        if let analysis = job.result {
+            storeAIAnalysis(analysis)
+        }
+        let stored = PersistedAIOutlookJob(job: job)
+        persistedAIOutlookJobs.removeAll { $0.key == stored.key }
+        persistedAIOutlookJobs.append(stored)
+        if persistedAIOutlookJobs.count > 40 {
+            persistedAIOutlookJobs.removeFirst(persistedAIOutlookJobs.count - 40)
+        }
+        AIOutlookJobStateStore.save(persistedAIOutlookJobs)
+    }
+
+    func clearAIOutlookJob(_ job: AIOutlookJob) {
+        let key = PersistedAIOutlookJob(job: job).key
+        persistedAIOutlookJobs.removeAll { $0.key == key || $0.job.jobId == job.jobId }
+        AIOutlookJobStateStore.save(persistedAIOutlookJobs)
+    }
+
+    func clearAIOutlookJob(
+        ticker: String,
+        interval: String,
+        range: String,
+        horizon: Int
+    ) {
+        let key = AIOutlookJobStorageKey(
+            userId: userId,
+            ticker: ticker,
+            interval: interval,
+            range: range,
+            horizon: horizon
+        )
+        persistedAIOutlookJobs.removeAll { $0.key == key }
+        AIOutlookJobStateStore.save(persistedAIOutlookJobs)
     }
 
     func handleServerSubscriptionAvailable() {
@@ -257,13 +322,15 @@ final class CompanionAppModel: ObservableObject {
         }
     }
 
-    private func registerIOSDeviceIfEnabled() async throws {
+    private func registerIOSDeviceIfEnabled(waitForSubscription: Bool = false) async throws {
         guard preferences?.iosEnabled != false else { return }
-        guard
-            let subscriptionId = OneSignalService.shared.currentPushSubscriptionId,
-            !subscriptionId.isEmpty,
-            !subscriptionId.hasPrefix("local-")
-        else {
+        let subscriptionId: String?
+        if waitForSubscription {
+            subscriptionId = await OneSignalService.shared.waitForUsablePushSubscription()
+        } else {
+            subscriptionId = OneSignalService.shared.currentPushSubscriptionId
+        }
+        guard let subscriptionId, !subscriptionId.isEmpty, !subscriptionId.hasPrefix("local-") else {
             return
         }
 
@@ -292,5 +359,53 @@ private struct AIAnalysisCacheKey: Hashable {
         self.ticker = ticker.uppercased()
         self.interval = interval
         self.horizon = horizon
+    }
+}
+
+private struct AIOutlookJobStorageKey: Codable, Hashable {
+    let userId: String
+    let ticker: String
+    let interval: String
+    let range: String
+    let horizon: Int
+
+    init(userId: String, ticker: String, interval: String, range: String, horizon: Int) {
+        self.userId = userId
+        self.ticker = ticker.uppercased()
+        self.interval = interval
+        self.range = range
+        self.horizon = horizon
+    }
+}
+
+private struct PersistedAIOutlookJob: Codable {
+    let key: AIOutlookJobStorageKey
+    let job: AIOutlookJob
+
+    init(job: AIOutlookJob) {
+        self.key = AIOutlookJobStorageKey(
+            userId: job.userId,
+            ticker: job.ticker,
+            interval: job.interval,
+            range: job.range,
+            horizon: job.horizon
+        )
+        self.job = job
+    }
+}
+
+private enum AIOutlookJobStateStore {
+    private static let storageKey = "tradealert.ai_outlook.jobs"
+    private static let encoder = JSONEncoder()
+    private static let decoder = JSONDecoder()
+
+    static func load() -> [PersistedAIOutlookJob] {
+        guard let data = UserDefaults.standard.data(forKey: storageKey) else { return [] }
+        return (try? decoder.decode([PersistedAIOutlookJob].self, from: data)) ?? []
+    }
+
+    static func save(_ jobs: [PersistedAIOutlookJob]) {
+        guard let data = try? encoder.encode(jobs) else { return }
+        UserDefaults.standard.set(data, forKey: storageKey)
     }
 }

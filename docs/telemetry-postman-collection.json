@@ -251,6 +251,28 @@
           "response": []
         },
         {
+          "name": "Cancel AI Outlook job",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{API_BASE}}/users/{{USER_ID}}/ai-outlook/jobs/{{AI_OUTLOOK_JOB_ID}}",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "users",
+                "{{USER_ID}}",
+                "ai-outlook",
+                "jobs",
+                "{{AI_OUTLOOK_JOB_ID}}"
+              ]
+            },
+            "description": "Cancel a queued or running persisted AI Outlook job and clear it from app state."
+          },
+          "response": []
+        },
+        {
           "name": "List AI Outlook jobs",
           "request": {
             "method": "GET",
@@ -399,6 +421,43 @@
               ]
             },
             "description": "Admin view of AI Outlook jobs currently claimed by the worker."
+          },
+          "response": []
+        },
+        {
+          "name": "List canceled AI Outlook jobs",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Admin-Token",
+                "value": "{{ADMIN_TOKEN}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{API_BASE}}/admin/telemetry/ai-outlook/jobs?status=canceled&limit=50",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "admin",
+                "telemetry",
+                "ai-outlook",
+                "jobs"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "canceled"
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            },
+            "description": "Admin view of AI Outlook jobs canceled by users."
           },
           "response": []
         },

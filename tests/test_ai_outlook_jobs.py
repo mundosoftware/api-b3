@@ -1,4 +1,5 @@
 import asyncio
+import sqlite3
 import tempfile
 import unittest
 from types import SimpleNamespace
@@ -98,6 +99,175 @@ class AIOutlookJobsTest(unittest.TestCase):
             self.assertEqual(usage.by_status[0].name, "queued")
             self.assertEqual(len(jobs.result), 1)
             self.assertEqual(unauthorized_status, 401)
+
+    def test_api_cancels_job_and_allows_new_request(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            settings = Settings(
+                database_path=f"{tmpdir}/app.db",
+                check_loop_enabled=False,
+                ai_outlook_worker_enabled=False,
+                admin_token="secret",
+                kronos_enabled=False,
+            )
+            init_db(settings)
+            repository = Repository(settings)
+            app = create_app(settings)
+            endpoints = {getattr(route, "name", ""): route.endpoint for route in app.routes}
+
+            async def exercise_routes():
+                request = AIOutlookJobCreateRequest(ticker="PETR4", horizon=10)
+                created = await endpoints["create_ai_outlook_job"]("user-a", request)
+                canceled = await endpoints["cancel_ai_outlook_job"]("user-a", created.job_id)
+                claim_after_cancel = repository.claim_next_ai_outlook_job()
+                new_job = await endpoints["create_ai_outlook_job"]("user-a", request)
+                try:
+                    await endpoints["cancel_ai_outlook_job"]("user-a", "missing-job")
+                except HTTPException as exc:
+                    not_found_status = exc.status_code
+                else:
+                    not_found_status = None
+                return created, canceled, claim_after_cancel, new_job, not_found_status
+
+            created, canceled, claim_after_cancel, new_job, not_found_status = asyncio.run(
+                exercise_routes()
+            )
+
+            self.assertEqual(created.status, "queued")
+            self.assertEqual(canceled.status, "canceled")
+            self.assertEqual(canceled.notification_status, "canceled_by_user")
+            self.assertIsNone(claim_after_cancel)
+            self.assertEqual(new_job.status, "queued")
+            self.assertNotEqual(new_job.job_id, created.job_id)
+            self.assertEqual(not_found_status, 404)
+
+    def test_cached_succeeded_job_sends_notification(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            settings = Settings(
+                database_path=f"{tmpdir}/app.db",
+                check_loop_enabled=False,
+                ai_outlook_worker_enabled=False,
+                kronos_enabled=False,
+                kronos_max_context=120,
+                onesignal_app_id="ios-app",
+                onesignal_rest_api_key="ios-key",
+            )
+            init_db(settings)
+            repository = Repository(settings)
+            repository.save_device(
+                user_id="user-a",
+                platform="ios",
+                device_token="subscription-0000000001",
+                environment="production",
+                onesignal_subscription_id="subscription-0000000001",
+            )
+            repository.save_prediction_cache(
+                "PETR4",
+                "1d",
+                10,
+                120,
+                "ewma-trend-fallback",
+                make_analysis(),
+                ttl_seconds=3600,
+            )
+            app = create_app(settings)
+            endpoints = {getattr(route, "name", ""): route.endpoint for route in app.routes}
+
+            async def exercise_route():
+                request = AIOutlookJobCreateRequest(ticker="PETR4", horizon=10)
+                return await endpoints["create_ai_outlook_job"]("user-a", request)
+
+            response = SimpleNamespace(
+                status_code=200,
+                text="",
+                json=lambda: {"id": "notification-1"},
+            )
+            with patch("src.onesignal.requests.post", return_value=response):
+                created = asyncio.run(exercise_route())
+            notifications = repository.list_notification_logs(user_id="user-a")
+
+            self.assertEqual(created.status, "succeeded")
+            self.assertEqual(created.notification_status, "sent; ios: sent")
+            self.assertEqual(len(notifications), 1)
+            self.assertEqual(notifications[0]["status"], "sent; ios: sent")
+
+    def test_cancelled_running_job_is_not_completed_after_worker_returns(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            settings = Settings(
+                database_path=f"{tmpdir}/app.db",
+                check_loop_enabled=False,
+                kronos_enabled=False,
+            )
+            init_db(settings)
+            repository = Repository(settings)
+            job = repository.create_ai_outlook_job("user-a", "PETR4")
+            claimed = repository.claim_next_ai_outlook_job()
+
+            canceled = repository.cancel_ai_outlook_job("user-a", job["job_id"])
+            completed = repository.complete_ai_outlook_job(claimed["job_id"], make_analysis())
+            final_job = repository.get_ai_outlook_job("user-a", job["job_id"])
+
+            self.assertEqual(claimed["status"], "running")
+            self.assertEqual(canceled["status"], "canceled")
+            self.assertIsNone(completed)
+            self.assertEqual(final_job["status"], "canceled")
+            self.assertIsNone(final_job["result"])
+
+    def test_init_db_migrates_ai_outlook_jobs_to_allow_canceled_status(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            database_path = f"{tmpdir}/app.db"
+            db = sqlite3.connect(database_path)
+            try:
+                db.executescript(
+                    """
+                    CREATE TABLE users (
+                        user_id TEXT PRIMARY KEY,
+                        display_name TEXT,
+                        timezone TEXT NOT NULL DEFAULT 'America/Sao_Paulo',
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
+                    );
+                    CREATE TABLE companies (
+                        ticker TEXT PRIMARY KEY,
+                        name TEXT NOT NULL,
+                        asset_type TEXT NOT NULL
+                    );
+                    CREATE TABLE ai_outlook_jobs (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        job_id TEXT NOT NULL UNIQUE,
+                        user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+                        ticker TEXT NOT NULL REFERENCES companies(ticker) ON DELETE CASCADE,
+                        interval TEXT NOT NULL,
+                        range_name TEXT NOT NULL,
+                        horizon INTEGER NOT NULL,
+                        refresh INTEGER NOT NULL DEFAULT 0,
+                        status TEXT NOT NULL CHECK(status IN ('queued', 'running', 'succeeded', 'failed')),
+                        attempt_count INTEGER NOT NULL DEFAULT 0,
+                        max_attempts INTEGER NOT NULL DEFAULT 3,
+                        queued_at TEXT NOT NULL,
+                        started_at TEXT,
+                        finished_at TEXT,
+                        next_attempt_at TEXT,
+                        result_json TEXT,
+                        failure_reason TEXT,
+                        notification_status TEXT
+                    );
+                    """
+                )
+            finally:
+                db.close()
+
+            settings = Settings(
+                database_path=database_path,
+                check_loop_enabled=False,
+                kronos_enabled=False,
+            )
+            init_db(settings)
+            repository = Repository(settings)
+            job = repository.create_ai_outlook_job("user-a", "PETR4")
+
+            canceled = repository.cancel_ai_outlook_job("user-a", job["job_id"])
+
+            self.assertEqual(canceled["status"], "canceled")
 
     def test_processor_completes_job_and_notifies_user(self):
         with tempfile.TemporaryDirectory() as tmpdir:

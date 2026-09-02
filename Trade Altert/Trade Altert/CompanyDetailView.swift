@@ -10,13 +10,19 @@ struct CompanyDetailView: View {
     @State private var aiJob: AIOutlookJob?
     @State private var aiHorizon = 10
     @State private var aiIsLoading = false
+    @State private var aiCancelIsLoading = false
     @State private var aiError: String?
     @State private var aiRequestID = UUID()
+    @State private var aiPollingTask: Task<Void, Never>?
     @State private var aiToggleIsLoading = false
     @State private var aiCopyToastMessage: String?
     @State private var aiCopyToastID = UUID()
     @State private var showAIActivationDisclosure = false
     @State private var showAIDeactivationConfirmation = false
+    @State private var showAICancelConfirmation = false
+
+    private static let aiInterval = "1d"
+    private static let aiRange = "2y"
 
     init(company: Company) {
         _company = State(initialValue: company)
@@ -107,7 +113,7 @@ struct CompanyDetailView: View {
             await reload()
             await model.refreshAIOutlookFeatureStatus(force: false)
             if model.aiOutlookAvailable && model.aiOutlookEnabled {
-                await loadAIAnalysis()
+                startAIAnalysis()
             }
         }
         .refreshable {
@@ -117,23 +123,23 @@ struct CompanyDetailView: View {
         }
         .onChange(of: aiHorizon) { _, _ in
             guard model.aiOutlookAvailable, model.aiOutlookEnabled else { return }
-            Task {
-                await loadAIAnalysis(forceRefresh: true)
-            }
+            startAIAnalysis(forceRefresh: true)
         }
         .onChange(of: model.aiOutlookEnabled) { _, enabled in
             guard model.aiOutlookAvailable, enabled, aiAnalysis == nil, !aiToggleIsLoading else { return }
-            Task {
-                await loadAIAnalysis()
-            }
+            startAIAnalysis()
         }
         .onChange(of: model.aiOutlookAvailable) { _, available in
             if !available {
                 resetAIOutlookData()
             } else if model.aiOutlookEnabled && aiAnalysis == nil {
-                Task {
-                    await loadAIAnalysis()
-                }
+                startAIAnalysis()
+            }
+        }
+        .onDisappear {
+            stopAIAnalysisPolling()
+            if aiJob?.status.isPending == true {
+                aiIsLoading = false
             }
         }
         .alert(language.text("ai.ftue.title"), isPresented: $showAIActivationDisclosure) {
@@ -150,6 +156,14 @@ struct CompanyDetailView: View {
             }
         } message: {
             Text(language.text("ai.disable.confirm_message"))
+        }
+        .alert(language.text("ai.cancel.confirm_title"), isPresented: $showAICancelConfirmation) {
+            Button(language.text("action.cancel"), role: .cancel) {}
+            Button(language.text("ai.cancel.confirm_cta"), role: .destructive) {
+                cancelAIOutlookJob()
+            }
+        } message: {
+            Text(language.text("ai.cancel.confirm_message"))
         }
     }
 
@@ -173,7 +187,14 @@ struct CompanyDetailView: View {
                 .disabled(aiIsLoading)
 
                 if shouldShowAIJobStatus {
-                    AIOutlookJobStatusView(job: aiJob, isLoading: aiIsLoading)
+                    AIOutlookJobStatusView(
+                        job: aiJob,
+                        isLoading: aiIsLoading,
+                        isCanceling: aiCancelIsLoading,
+                        onCancel: {
+                            showAICancelConfirmation = true
+                        }
+                    )
                 }
 
                 if let aiAnalysis {
@@ -192,26 +213,23 @@ struct CompanyDetailView: View {
 
                 if aiJob?.status == .failed {
                     Button {
-                        Task {
-                            await loadAIAnalysis(forceRefresh: true)
-                        }
+                        startAIAnalysis(forceRefresh: true)
                     } label: {
                         Label(language.text("ai.retry_cta"), systemImage: "arrow.clockwise")
                     }
                 } else {
                     Button {
-                        Task {
-                            await loadAIAnalysis(forceRefresh: true)
-                        }
+                        startAIAnalysis(forceRefresh: true)
                     } label: {
                         Label(language.text("ai.refresh"), systemImage: "arrow.clockwise")
                     }
-                    .disabled(aiIsLoading)
+                    .disabled(aiIsLoading || aiCancelIsLoading)
                 }
 
                 AIOutlookActivationCTA(
                     isEnabled: true,
                     isLoading: aiToggleIsLoading,
+                    isDisabled: aiJob?.status.isPending == true || aiIsLoading || aiCancelIsLoading,
                     role: .destructive
                 ) {
                     showAIDeactivationConfirmation = true
@@ -228,12 +246,33 @@ struct CompanyDetailView: View {
         }
     }
 
+    private func startAIAnalysis(forceRefresh: Bool = false) {
+        stopAIAnalysisPolling()
+        aiPollingTask = Task {
+            await loadAIAnalysis(forceRefresh: forceRefresh)
+        }
+    }
+
+    private func stopAIAnalysisPolling() {
+        aiPollingTask?.cancel()
+        aiPollingTask = nil
+    }
+
     private func loadAIAnalysis(forceRefresh: Bool = false) async {
-        guard model.aiOutlookAvailable, model.aiOutlookEnabled else { return }
-        let interval = "1d"
-        let range = "2y"
+        guard model.aiOutlookAvailable, model.aiOutlookEnabled, !aiCancelIsLoading else { return }
+        let interval = Self.aiInterval
+        let range = Self.aiRange
         let requestID = UUID()
         let requestHorizon = aiHorizon
+        if !forceRefresh,
+           await resumePersistedAIJob(
+            interval: interval,
+            range: range,
+            horizon: requestHorizon,
+            requestID: requestID
+           ) {
+            return
+        }
         if !forceRefresh {
             if let current = aiAnalysis,
                current.ticker.uppercased() == company.ticker.uppercased(),
@@ -256,6 +295,12 @@ struct CompanyDetailView: View {
         aiError = nil
         if forceRefresh {
             aiJob = nil
+            model.clearAIOutlookJob(
+                ticker: company.ticker,
+                interval: interval,
+                range: range,
+                horizon: requestHorizon
+            )
         }
         do {
             let request = AIOutlookJobCreateRequest(
@@ -265,20 +310,12 @@ struct CompanyDetailView: View {
                 horizon: requestHorizon,
                 refresh: forceRefresh
             )
-            var job = try await CompanionAPIClient.shared.createAIOutlookJob(
+            let job = try await CompanionAPIClient.shared.createAIOutlookJob(
                 userId: model.userId,
                 request: request
             )
             handleAIJob(job, requestID: requestID)
-
-            while aiRequestID == requestID && job.status.isPending {
-                try await Task.sleep(nanoseconds: 3_000_000_000)
-                job = try await CompanionAPIClient.shared.aiOutlookJob(
-                    userId: model.userId,
-                    jobId: job.jobId
-                )
-                handleAIJob(job, requestID: requestID)
-            }
+            try await pollAIJob(job, requestID: requestID)
         } catch is CancellationError {
             return
         } catch {
@@ -292,10 +329,74 @@ struct CompanyDetailView: View {
         }
     }
 
+    private func resumePersistedAIJob(
+        interval: String,
+        range: String,
+        horizon: Int,
+        requestID: UUID
+    ) async -> Bool {
+        guard let storedJob = model.storedAIOutlookJob(
+            ticker: company.ticker,
+            interval: interval,
+            range: range,
+            horizon: horizon
+        ) else {
+            return false
+        }
+
+        aiRequestID = requestID
+        aiIsLoading = storedJob.status.isPending
+        aiError = nil
+        handleAIJob(storedJob, requestID: requestID)
+        guard storedJob.status.isPending else { return true }
+
+        do {
+            let latestJob = try await CompanionAPIClient.shared.aiOutlookJob(
+                userId: model.userId,
+                jobId: storedJob.jobId
+            )
+            handleAIJob(latestJob, requestID: requestID)
+            try await pollAIJob(latestJob, requestID: requestID)
+        } catch is CancellationError {
+            return true
+        } catch {
+            if isMissingAIJobError(error) {
+                model.clearAIOutlookJob(storedJob)
+                aiJob = nil
+                aiIsLoading = false
+                aiError = nil
+                return false
+            }
+            if aiRequestID == requestID {
+                aiError = language.aiOutlookErrorText(error)
+                aiIsLoading = false
+            }
+        }
+        return true
+    }
+
+    private func pollAIJob(_ initialJob: AIOutlookJob, requestID: UUID) async throws {
+        var job = initialJob
+        while aiRequestID == requestID && job.status.isPending {
+            try await Task.sleep(nanoseconds: 3_000_000_000)
+            job = try await CompanionAPIClient.shared.aiOutlookJob(
+                userId: model.userId,
+                jobId: job.jobId
+            )
+            handleAIJob(job, requestID: requestID)
+        }
+    }
+
     private func handleAIJob(_ job: AIOutlookJob, requestID: UUID) {
         guard aiRequestID == requestID, model.aiOutlookAvailable, model.aiOutlookEnabled else { return }
+        if job.status == .canceled {
+            model.clearAIOutlookJob(job)
+            resetAIOutlookData()
+            return
+        }
         aiJob = job
         aiError = nil
+        model.storeAIOutlookJob(job)
         if let analysis = job.result {
             aiAnalysis = analysis
             model.storeAIAnalysis(analysis)
@@ -303,6 +404,54 @@ struct CompanyDetailView: View {
         if !job.status.isPending {
             aiIsLoading = false
         }
+    }
+
+    private func cancelAIOutlookJob() {
+        stopAIAnalysisPolling()
+        let interval = Self.aiInterval
+        let range = Self.aiRange
+        let requestHorizon = aiHorizon
+        guard let job = aiJob, job.status.isPending else {
+            model.clearAIOutlookJob(
+                ticker: company.ticker,
+                interval: interval,
+                range: range,
+                horizon: requestHorizon
+            )
+            resetAIOutlookData()
+            return
+        }
+
+        aiCancelIsLoading = true
+        aiError = nil
+        Task {
+            do {
+                let canceledJob = try await CompanionAPIClient.shared.cancelAIOutlookJob(
+                    userId: model.userId,
+                    jobId: job.jobId
+                )
+                model.clearAIOutlookJob(canceledJob)
+            } catch {
+                model.errorMessage = language.aiOutlookErrorText(error)
+            }
+            model.clearAIOutlookJob(job)
+            model.clearAIOutlookJob(
+                ticker: company.ticker,
+                interval: interval,
+                range: range,
+                horizon: requestHorizon
+            )
+            resetAIOutlookData()
+            aiCancelIsLoading = false
+        }
+    }
+
+    private func isMissingAIJobError(_ error: Error) -> Bool {
+        guard let apiError = error as? CompanionAPIError else { return false }
+        if case let .badResponse(status, _) = apiError {
+            return status == 404
+        }
+        return false
     }
 
     private func toggleAIOutlook() async {
@@ -314,17 +463,25 @@ struct CompanyDetailView: View {
         guard updated else { return }
 
         if !shouldEnable {
+            model.clearAIOutlookJob(
+                ticker: company.ticker,
+                interval: Self.aiInterval,
+                range: Self.aiRange,
+                horizon: aiHorizon
+            )
             resetAIOutlookData()
             return
         }
 
         showAIActivationDisclosure = true
-        await loadAIAnalysis()
+        startAIAnalysis()
     }
 
     private func resetAIOutlookData() {
+        stopAIAnalysisPolling()
         aiRequestID = UUID()
         aiIsLoading = false
+        aiCancelIsLoading = false
         aiError = nil
         aiAnalysis = nil
         aiJob = nil
@@ -369,6 +526,8 @@ struct AIOutlookJobStatusView: View {
 
     let job: AIOutlookJob?
     let isLoading: Bool
+    let isCanceling: Bool
+    let onCancel: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -390,6 +549,16 @@ struct AIOutlookJobStatusView: View {
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
             }
+
+            if job?.status.isPending == true {
+                Button(role: .destructive, action: onCancel) {
+                    Text(cancelTitle)
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .disabled(isCanceling)
+            }
         }
         .padding(.vertical, 6)
     }
@@ -407,6 +576,8 @@ struct AIOutlookJobStatusView: View {
             return language.text("ai.job.succeeded_title")
         case .failed:
             return language.text("ai.job.failed_title")
+        case .canceled:
+            return language.text("ai.job.canceled_title")
         }
     }
 
@@ -430,6 +601,8 @@ struct AIOutlookJobStatusView: View {
             return language.text("ai.job.succeeded_message")
         case .failed:
             return String(format: language.text("ai.job.failed_message"), job.maxAttempts)
+        case .canceled:
+            return language.text("ai.job.canceled_message")
         }
     }
 
@@ -450,9 +623,15 @@ struct AIOutlookJobStatusView: View {
             return "checkmark.circle"
         case .running:
             return "brain.head.profile"
+        case .canceled:
+            return "xmark.circle"
         default:
             return "hourglass"
         }
+    }
+
+    private var cancelTitle: String {
+        language.text(isCanceling ? "ai.cancel.loading_cta" : "ai.cancel.cta")
     }
 }
 
@@ -508,6 +687,7 @@ struct AIOutlookActivationCTA: View {
 
     let isEnabled: Bool
     let isLoading: Bool
+    var isDisabled = false
     var role: ButtonRole?
     let action: () -> Void
 
@@ -520,7 +700,7 @@ struct AIOutlookActivationCTA: View {
                 .padding(.vertical, 6)
         }
         .buttonStyle(.borderedProminent)
-        .disabled(isLoading)
+        .disabled(isLoading || isDisabled)
     }
 
     private var title: String {

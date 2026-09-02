@@ -10,7 +10,7 @@ CandleRange = Literal["6mo", "1y", "2y", "5y", "10y", "max"]
 DecisionOutlook = Literal["bullish", "neutral", "bearish"]
 DecisionRiskLevel = Literal["low", "medium", "high"]
 ForecastProvider = Literal["kronos", "statistical"]
-AIOutlookJobStatus = Literal["queued", "running", "succeeded", "failed"]
+AIOutlookJobStatus = Literal["queued", "running", "succeeded", "failed", "canceled"]
 
 
 class CompanyOut(BaseModel):
@@ -589,6 +589,7 @@ class UserTelemetryOut(BaseModel):
     ai_outlook_job_count: int
     ai_outlook_succeeded_count: int
     ai_outlook_failed_count: int
+    ai_outlook_canceled_count: int
     latest_ai_outlook_job_at: str | None = None
     latest_seen_at: str | None = None
     created_at: str

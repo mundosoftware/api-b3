@@ -50,6 +50,55 @@ def _ensure_column(db: sqlite3.Connection, table: str, column: str, definition: 
         db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
 
+def _ensure_ai_outlook_jobs_status_allows_canceled(db: sqlite3.Connection) -> None:
+    row = db.execute(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'ai_outlook_jobs'"
+    ).fetchone()
+    if row is None or "canceled" in (row["sql"] or ""):
+        return
+
+    db.execute("ALTER TABLE ai_outlook_jobs RENAME TO ai_outlook_jobs_old")
+    db.execute(
+        """
+        CREATE TABLE ai_outlook_jobs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            job_id TEXT NOT NULL UNIQUE,
+            user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+            ticker TEXT NOT NULL REFERENCES companies(ticker) ON DELETE CASCADE,
+            interval TEXT NOT NULL,
+            range_name TEXT NOT NULL,
+            horizon INTEGER NOT NULL,
+            refresh INTEGER NOT NULL DEFAULT 0,
+            status TEXT NOT NULL CHECK(status IN ('queued', 'running', 'succeeded', 'failed', 'canceled')),
+            attempt_count INTEGER NOT NULL DEFAULT 0,
+            max_attempts INTEGER NOT NULL DEFAULT 3,
+            queued_at TEXT NOT NULL,
+            started_at TEXT,
+            finished_at TEXT,
+            next_attempt_at TEXT,
+            result_json TEXT,
+            failure_reason TEXT,
+            notification_status TEXT
+        )
+        """
+    )
+    db.execute(
+        """
+        INSERT INTO ai_outlook_jobs(
+            id, job_id, user_id, ticker, interval, range_name, horizon,
+            refresh, status, attempt_count, max_attempts, queued_at, started_at,
+            finished_at, next_attempt_at, result_json, failure_reason, notification_status
+        )
+        SELECT
+            id, job_id, user_id, ticker, interval, range_name, horizon,
+            refresh, status, attempt_count, max_attempts, queued_at, started_at,
+            finished_at, next_attempt_at, result_json, failure_reason, notification_status
+        FROM ai_outlook_jobs_old
+        """
+    )
+    db.execute("DROP TABLE ai_outlook_jobs_old")
+
+
 class Database:
     def __init__(self, settings: Settings | None = None):
         self.settings = settings or get_settings()
@@ -125,7 +174,7 @@ def init_db(settings: Settings | None = None) -> None:
                 range_name TEXT NOT NULL,
                 horizon INTEGER NOT NULL,
                 refresh INTEGER NOT NULL DEFAULT 0,
-                status TEXT NOT NULL CHECK(status IN ('queued', 'running', 'succeeded', 'failed')),
+                status TEXT NOT NULL CHECK(status IN ('queued', 'running', 'succeeded', 'failed', 'canceled')),
                 attempt_count INTEGER NOT NULL DEFAULT 0,
                 max_attempts INTEGER NOT NULL DEFAULT 3,
                 queued_at TEXT NOT NULL,
@@ -319,6 +368,17 @@ def init_db(settings: Settings | None = None) -> None:
 
             CREATE INDEX IF NOT EXISTS idx_iap_trials_status
                 ON iap_trials(status, next_available_at);
+            """
+        )
+        _ensure_ai_outlook_jobs_status_allows_canceled(db)
+        db.executescript(
+            """
+            CREATE INDEX IF NOT EXISTS idx_ai_outlook_jobs_queue
+                ON ai_outlook_jobs(status, next_attempt_at, queued_at);
+            CREATE INDEX IF NOT EXISTS idx_ai_outlook_jobs_user_created
+                ON ai_outlook_jobs(user_id, queued_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_ai_outlook_jobs_active_lookup
+                ON ai_outlook_jobs(user_id, ticker, interval, range_name, horizon, status);
             """
         )
         _ensure_column(db, "user_devices", "device_model", "TEXT")

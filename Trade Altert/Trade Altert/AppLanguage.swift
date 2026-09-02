@@ -185,6 +185,14 @@ final class AppLanguage: ObservableObject {
         "ai.updating": [.pt: "Atualizando análise...", .en: "Updating analysis..."],
         "ai.refresh": [.pt: "Atualizar análise IA", .en: "Refresh AI analysis"],
         "ai.retry_cta": [.pt: "Tentar novamente", .en: "Try again"],
+        "ai.cancel.cta": [.pt: "Cancelar análise IA", .en: "Cancel AI analysis"],
+        "ai.cancel.loading_cta": [.pt: "Cancelando análise...", .en: "Canceling analysis..."],
+        "ai.cancel.confirm_title": [.pt: "Cancelar análise IA?", .en: "Cancel AI analysis?"],
+        "ai.cancel.confirm_message": [
+            .pt: "A solicitação em andamento será cancelada e removida deste dispositivo.",
+            .en: "The in-progress request will be canceled and removed from this device."
+        ],
+        "ai.cancel.confirm_cta": [.pt: "Cancelar análise", .en: "Cancel analysis"],
         "ai.job.queued_title": [.pt: "Análise IA na fila", .en: "AI analysis queued"],
         "ai.job.queued_message": [
             .pt: "Este modelo é complexo e a análise pode demorar. Você pode sair desta tela; avisaremos quando estiver pronta.",
@@ -204,6 +212,11 @@ final class AppLanguage: ObservableObject {
         "ai.job.failed_message": [
             .pt: "A análise falhou após %d tentativas. Tente novamente quando quiser.",
             .en: "The analysis failed after %d attempts. Try again whenever you are ready."
+        ],
+        "ai.job.canceled_title": [.pt: "Análise IA cancelada", .en: "AI analysis canceled"],
+        "ai.job.canceled_message": [
+            .pt: "A solicitação foi cancelada e removida deste dispositivo.",
+            .en: "The request was canceled and removed from this device."
         ],
         "ai.job.succeeded_title": [.pt: "Análise pronta", .en: "Analysis ready"],
         "ai.job.succeeded_message": [
