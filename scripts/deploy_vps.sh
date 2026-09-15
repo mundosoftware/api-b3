@@ -134,6 +134,11 @@ KRONOS_SAMPLE_COUNT="${KRONOS_SAMPLE_COUNT:-4}"
 KRONOS_TEMPERATURE="${KRONOS_TEMPERATURE:-1.0}"
 KRONOS_TOP_P="${KRONOS_TOP_P:-0.9}"
 KRONOS_DEVICE="${KRONOS_DEVICE:-}"
+UNIVERSAL_NOTIFIER_ENABLED="${UNIVERSAL_NOTIFIER_ENABLED:-false}"
+UNIVERSAL_NOTIFIER_HTTP_HOST="${UNIVERSAL_NOTIFIER_HTTP_HOST:-127.0.0.1}"
+UNIVERSAL_NOTIFIER_HTTP_PORT="${UNIVERSAL_NOTIFIER_HTTP_PORT:-8787}"
+UNIVERSAL_NOTIFIER_URL="${UNIVERSAL_NOTIFIER_URL:-http://${UNIVERSAL_NOTIFIER_HTTP_HOST}:${UNIVERSAL_NOTIFIER_HTTP_PORT}/v1/events}"
+UNIVERSAL_NOTIFIER_SERVICE_NAME="${UNIVERSAL_NOTIFIER_SERVICE_NAME:-${SERVICE_NAME:-b3-watch-api}-notifier}"
 HEALTH_CHECK_RETRIES="${HEALTH_CHECK_RETRIES:-30}"
 HEALTH_CHECK_INTERVAL_SECONDS="${HEALTH_CHECK_INTERVAL_SECONDS:-2}"
 LETSENCRYPT_EMAIL="${LETSENCRYPT_EMAIL:-}"
@@ -435,6 +440,8 @@ if reverse_proxy_enabled && [[ "${SERVER_HOST}" == "0.0.0.0" ]]; then
 fi
 KRONOS_RUNTIME_REPO_PATH="${KRONOS_REPO_PATH:-${APP_DIR}/.deps/Kronos}"
 KRONOS_CACHE_DIR="${KRONOS_CACHE_DIR:-${APP_DIR}/.cache/kronos}"
+UNIVERSAL_NOTIFIER_SOURCE_PATH="${ROOT_DIR}/.deps/Universal-Notifier"
+UNIVERSAL_NOTIFIER_RUNTIME_REPO_PATH="${APP_DIR}/.deps/Universal-Notifier"
 HF_HOME="${HF_HOME:-${KRONOS_CACHE_DIR}/huggingface}"
 TORCH_HOME="${TORCH_HOME:-${KRONOS_CACHE_DIR}/torch}"
 
@@ -540,6 +547,24 @@ check_public_health() {
   return 1
 }
 
+check_public_universal_notifier() {
+  if ! truthy "${UNIVERSAL_NOTIFIER_ENABLED}"; then
+    return
+  fi
+
+  local public_readiness_url
+  public_readiness_url="$(public_url_for_path "/readyz")"
+  echo "Checking public Universal Notifier readiness URL: ${public_readiness_url}"
+  if curl -fsS --max-time 8 "${public_readiness_url}"; then
+    echo
+    return 0
+  fi
+
+  echo "The API is reachable, but the public Universal Notifier readiness URL failed." >&2
+  print_remote_diagnostics
+  return 1
+}
+
 verify_remote_ai_outlook_source() {
   echo "Verifying deployed AI Outlook route source"
   if remote "grep -q 'features/ai-outlook' '${APP_DIR}/src/application.py' && grep -q 'admin/features/ai-outlook' '${APP_DIR}/src/application.py'"; then
@@ -579,6 +604,14 @@ check_public_ai_outlook_routes() {
 }
 
 configure_reverse_proxy() {
+  local notifier_locations=""
+  if truthy "${UNIVERSAL_NOTIFIER_ENABLED}"; then
+    notifier_locations="
+    location = /v1/events {
+        proxy_pass http://127.0.0.1:${UNIVERSAL_NOTIFIER_HTTP_PORT}/v1/events;
+    }
+"
+  fi
   echo "Installing nginx HTTP reverse proxy on :${HTTP_SERVER_PORT} -> 127.0.0.1:${SERVER_PORT}"
   remote_sudo "cat > /etc/nginx/sites-available/${SERVICE_NAME} <<EOF
 server {
@@ -590,6 +623,7 @@ server {
     location /.well-known/acme-challenge/ {
         root /var/www/certbot;
     }
+  ${notifier_locations}
 
     location / {
         proxy_pass http://127.0.0.1:${SERVER_PORT};
@@ -644,7 +678,15 @@ issue_tls_certificate() {
 
 configure_https_reverse_proxy() {
   local cert_name
+  local notifier_locations=""
   cert_name="$(certificate_name)"
+  if truthy "${UNIVERSAL_NOTIFIER_ENABLED}"; then
+    notifier_locations="
+    location = /v1/events {
+        proxy_pass http://127.0.0.1:${UNIVERSAL_NOTIFIER_HTTP_PORT}/v1/events;
+    }
+"
+  fi
   echo "Installing nginx HTTPS reverse proxy on :${HTTPS_SERVER_PORT} -> 127.0.0.1:${SERVER_PORT}"
   remote_sudo "cat > /etc/nginx/sites-available/${SERVICE_NAME} <<EOF
 server {
@@ -672,6 +714,7 @@ server {
     ssl_certificate_key /etc/letsencrypt/live/${cert_name}/privkey.pem;
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_prefer_server_ciphers off;
+  ${notifier_locations}
 
     location / {
         proxy_pass http://127.0.0.1:${SERVER_PORT};
@@ -752,15 +795,139 @@ else
 fi"
 }
 
+install_universal_notifier_source() {
+  if ! truthy "${UNIVERSAL_NOTIFIER_ENABLED}"; then
+    return
+  fi
+
+  if [[ ! -d "${UNIVERSAL_NOTIFIER_SOURCE_PATH}/src" ]]; then
+    echo "Universal Notifier source is missing at ${UNIVERSAL_NOTIFIER_SOURCE_PATH}" >&2
+    echo "Run ./scripts/install_project_dependencies.sh before deploying with UNIVERSAL_NOTIFIER_ENABLED=true." >&2
+    exit 1
+  fi
+}
+
+sync_universal_notifier_env() {
+  if ! truthy "${UNIVERSAL_NOTIFIER_ENABLED}"; then
+    return
+  fi
+
+  local source_env="${UNIVERSAL_NOTIFIER_SOURCE_PATH}/.env.local"
+  local remote_env_tmp="/tmp/${UNIVERSAL_NOTIFIER_SERVICE_NAME}.env.local.$$"
+  if [[ -f "${source_env}" ]]; then
+    echo "[notifier] Uploading private environment file"
+    remote "mkdir -p '${UNIVERSAL_NOTIFIER_RUNTIME_REPO_PATH}'"
+    rsync -az -e "${RSYNC_SSH}" "${source_env}" "${SSH_TARGET}:${remote_env_tmp}"
+    remote_sudo "install -o '${APP_USER}' -g '${APP_USER}' -m 600 '${remote_env_tmp}' '${UNIVERSAL_NOTIFIER_RUNTIME_REPO_PATH}/.env.local' && rm -f '${remote_env_tmp}'"
+    echo "[notifier] Private environment file installed with mode 600"
+    return
+  fi
+
+  if remote "test -f '${UNIVERSAL_NOTIFIER_RUNTIME_REPO_PATH}/.env.local'"; then
+    echo "[notifier] Using existing private environment file on VPS"
+    return
+  fi
+
+  echo "[notifier] Missing ${source_env} and no remote notifier environment file" >&2
+  echo "Create the private Universal Notifier .env.local locally or on the VPS, then redeploy." >&2
+  exit 1
+}
+
+configure_universal_notifier_service() {
+  if ! truthy "${UNIVERSAL_NOTIFIER_ENABLED}"; then
+    echo "Universal Notifier disabled; stopping ${UNIVERSAL_NOTIFIER_SERVICE_NAME} if present"
+    remote_sudo "systemctl disable --now '${UNIVERSAL_NOTIFIER_SERVICE_NAME}' 2>/dev/null || true"
+    return
+  fi
+
+  install_universal_notifier_source
+  sync_universal_notifier_env
+  echo "[notifier] Preparing systemd service definition"
+  NOTIFIER_SERVICE_TMP="$(mktemp)"
+  CLEANUP_FILES+=("${NOTIFIER_SERVICE_TMP}")
+  cat > "${NOTIFIER_SERVICE_TMP}" <<EOF
+[Unit]
+Description=Trade Alert Universal Notifier
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=${APP_USER}
+WorkingDirectory=${UNIVERSAL_NOTIFIER_RUNTIME_REPO_PATH}
+EnvironmentFile=${UNIVERSAL_NOTIFIER_RUNTIME_REPO_PATH}/.env.local
+ExecStart=/usr/bin/node src/cli.js serve
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+  NOTIFIER_SERVICE_REMOTE_TMP="/tmp/${UNIVERSAL_NOTIFIER_SERVICE_NAME}.service.$$"
+  echo "[notifier] Uploading systemd service definition"
+  rsync -az -e "${RSYNC_SSH}" "${NOTIFIER_SERVICE_TMP}" "${SSH_TARGET}:${NOTIFIER_SERVICE_REMOTE_TMP}"
+  NOTIFIER_SETUP_TMP="$(mktemp)"
+  CLEANUP_FILES+=("${NOTIFIER_SETUP_TMP}")
+  cat > "${NOTIFIER_SETUP_TMP}" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+
+chown -R ${APP_USER}:${APP_USER} ${UNIVERSAL_NOTIFIER_RUNTIME_REPO_PATH}
+echo '[notifier] Checking Node.js runtime'
+if ! command -v node >/dev/null 2>&1; then
+  echo "Node.js is required for Universal Notifier" >&2
+  exit 1
+fi
+node --version
+echo '[notifier] Checking private notifier environment file'
+test -f ${UNIVERSAL_NOTIFIER_RUNTIME_REPO_PATH}/.env.local
+echo '[notifier] Installing npm dependencies'
+cd ${UNIVERSAL_NOTIFIER_RUNTIME_REPO_PATH}
+npm install --omit=dev
+echo '[notifier] Installing systemd unit'
+install -o root -g root -m 644 ${NOTIFIER_SERVICE_REMOTE_TMP} /etc/systemd/system/${UNIVERSAL_NOTIFIER_SERVICE_NAME}.service
+rm -f ${NOTIFIER_SERVICE_REMOTE_TMP}
+echo '[notifier] Reloading and starting systemd unit'
+systemctl daemon-reload
+systemctl enable --now ${UNIVERSAL_NOTIFIER_SERVICE_NAME}
+EOF
+  NOTIFIER_SETUP_REMOTE_TMP="/tmp/${UNIVERSAL_NOTIFIER_SERVICE_NAME}-setup.$$"
+  echo "[notifier] Uploading remote installation script"
+  rsync -az -e "${RSYNC_SSH}" "${NOTIFIER_SETUP_TMP}" "${SSH_TARGET}:${NOTIFIER_SETUP_REMOTE_TMP}"
+  echo "[notifier] Installing dependencies and starting systemd service"
+  remote_sudo "bash ${NOTIFIER_SETUP_REMOTE_TMP} && rm -f ${NOTIFIER_SETUP_REMOTE_TMP}"
+  echo "[notifier] Systemd service started: ${UNIVERSAL_NOTIFIER_SERVICE_NAME}"
+}
+
+check_remote_universal_notifier() {
+  if ! truthy "${UNIVERSAL_NOTIFIER_ENABLED}"; then
+    return
+  fi
+
+  echo "[notifier] Checking readiness inside VPS"
+  if remote "curl -fsS --max-time 5 'http://127.0.0.1:${UNIVERSAL_NOTIFIER_HTTP_PORT}/readyz'"; then
+    echo
+    return 0
+  fi
+
+  echo "[notifier] Universal Notifier is not ready inside the VPS." >&2
+  remote_sudo "systemctl status ${UNIVERSAL_NOTIFIER_SERVICE_NAME} --no-pager -l || true"
+  remote_sudo "journalctl -u ${UNIVERSAL_NOTIFIER_SERVICE_NAME} -n 80 --no-pager || true"
+  return 1
+}
+
 echo "Preparing ${SSH_TARGET}:${APP_DIR}"
 REMOTE_PACKAGES="python3 python3-venv python3-pip rsync curl"
-if truthy "${KRONOS_INSTALL}"; then
+if truthy "${KRONOS_INSTALL}" || truthy "${UNIVERSAL_NOTIFIER_ENABLED}"; then
   REMOTE_PACKAGES="${REMOTE_PACKAGES} git"
 fi
 if reverse_proxy_enabled; then
   REMOTE_PACKAGES="${REMOTE_PACKAGES} nginx"
 fi
 remote_sudo "apt-get update && apt-get install -y ${REMOTE_PACKAGES}"
+if truthy "${UNIVERSAL_NOTIFIER_ENABLED}"; then
+  echo "Installing Node.js 20 for Universal Notifier"
+  remote_sudo "curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && apt-get install -y nodejs"
+fi
 remote_sudo "mkdir -p '${APP_DIR}' && chown -R '${APP_USER}:${APP_USER}' '${APP_DIR}'"
 
 echo "Syncing source"
@@ -772,7 +939,9 @@ rsync -az --delete \
   --exclude "local.env.*" \
   --exclude ".deploy.env" \
   --exclude ".cache" \
-  --exclude ".deps" \
+  --exclude ".deps/Kronos" \
+  --exclude ".deps/Universal-Notifier/.env.local" \
+  --exclude ".deps/Universal-Notifier/.data" \
   --exclude "database" \
   --exclude "venv" \
   --exclude "__pycache__" \
@@ -818,6 +987,9 @@ CLEANUP_FILES+=("${TMP_ENV}")
   write_env_line "KRONOS_CACHE_DIR" "${KRONOS_CACHE_DIR}"
   write_env_line "HF_HOME" "${HF_HOME}"
   write_env_line "TORCH_HOME" "${TORCH_HOME}"
+  write_env_line "UNIVERSAL_NOTIFIER_ENABLED" "${UNIVERSAL_NOTIFIER_ENABLED}"
+  write_env_line "UNIVERSAL_NOTIFIER_URL" "${UNIVERSAL_NOTIFIER_URL}"
+  write_env_line "UNIVERSAL_NOTIFIER_HTTP_TOKEN" "${UNIVERSAL_NOTIFIER_HTTP_TOKEN:-}"
 } > "${TMP_ENV}"
 rsync -az -e "${RSYNC_SSH}" "${TMP_ENV}" "${SSH_TARGET}:${APP_DIR}/local.env"
 remote "chmod 600 '${APP_DIR}/local.env'"
@@ -864,12 +1036,16 @@ if https_enabled; then
   install_certificate_renewal_timer
 fi
 
+configure_universal_notifier_service
+check_remote_universal_notifier
+
 wait_for_remote_health
 check_internal_ai_outlook_routes
 if reverse_proxy_enabled; then
   wait_for_remote_public_health
 fi
 check_public_health
+check_public_universal_notifier
 check_public_ai_outlook_routes
 
 echo "Deployment finished."

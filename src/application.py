@@ -64,6 +64,7 @@ from src.models import (
     UserUpsertRequest,
 )
 from src.onesignal import OneSignalClient, OneSignalError
+from src.operational_notifier import OperationalNotifier
 from src.repositories import Repository
 from src.telemetry import TelemetryService
 from src.tickers import QuoteLookupError, TickerService
@@ -76,12 +77,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     candle_service = CandleService(repository, settings)
     decision_support = DecisionSupportService(repository, settings, candle_service)
     onesignal = OneSignalClient(settings)
-    alert_engine = AlertEngine(repository, ticker_service, onesignal, settings)
+    operational_notifier = OperationalNotifier(settings)
+    alert_engine = AlertEngine(repository, ticker_service, onesignal, settings, operational_notifier)
     ai_outlook_processor = AIOutlookJobProcessor(
         repository,
         decision_support,
         onesignal,
         settings,
+        operational_notifier,
     )
     telemetry = TelemetryService(repository, alert_engine)
 
@@ -113,8 +116,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/health")
     async def health() -> dict[str, object]:
         ai_outlook_enabled = repository.ai_outlook_feature_enabled()
+        universal_notifier = await run_in_threadpool(operational_notifier.health_status)
         return {
-            "status": "ok",
+            "status": (
+                "degraded"
+                if universal_notifier["enabled"] and not universal_notifier["ready"]
+                else "ok"
+            ),
             "onesignal_configured": onesignal.configured,
             "onesignal_ios_configured": onesignal.ios_configured,
             "onesignal_watchos_configured": onesignal.watchos_configured,
@@ -123,6 +131,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "ai_outlook_worker_enabled": settings.ai_outlook_worker_enabled,
             "ai_outlook_job_max_attempts": settings.ai_outlook_job_max_attempts,
             "kronos_enabled": settings.kronos_enabled,
+            "universal_notifier": universal_notifier,
+        }
+
+    @app.get("/readyz")
+    async def readiness() -> dict[str, object]:
+        universal_notifier = await run_in_threadpool(operational_notifier.health_status)
+        return {
+            "status": "ready" if universal_notifier["ready"] else "degraded",
+            "universal_notifier": universal_notifier,
         }
 
     @app.get("/features/ai-outlook", response_model=FeatureFlagOut)
@@ -271,7 +288,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.put("/users/{user_id}", response_model=UserOut)
     async def upsert_user(user_id: str, request: UserUpsertRequest) -> UserOut:
-        return UserOut(**repository.upsert_user(user_id, request.display_name, request.timezone))
+        is_new_user = repository.get_user(user_id) is None
+        user = repository.upsert_user(user_id, request.display_name, request.timezone)
+        if is_new_user:
+            operational_notifier.notify_later(
+                event="user.created",
+                severity="success",
+                title="New Trade Alert user",
+                message="A new user account was created.",
+                subject={"type": "user", "id": user_id},
+                dedupe_key=f"trade-alert:user:{user_id}:created",
+                metadata={"timezone": user["timezone"]},
+            )
+        return UserOut(**user)
 
     @app.post("/users/{user_id}/devices/watchos", response_model=DeviceRegistrationOut)
     async def register_watch_device(
@@ -387,15 +416,84 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def record_iap_telemetry(
         user_id: str, request: IAPTelemetryEventCreateRequest
     ) -> IAPTelemetryEventOut:
-        return IAPTelemetryEventOut(**repository.record_iap_telemetry_event(user_id, request))
+        event = repository.record_iap_telemetry_event(user_id, request)
+        event_name = request.event_type
+        important_events = {
+            "purchase_started": ("info", "IAP purchase started"),
+            "purchase_pending": ("warning", "IAP purchase pending"),
+            "purchase_succeeded": ("success", "IAP purchase succeeded"),
+            "purchase_failed": ("error", "IAP purchase failed"),
+            "purchase_cancelled": ("warning", "IAP purchase cancelled"),
+            "restore_started": ("info", "IAP restore started"),
+            "restore_failed": ("error", "IAP restore failed"),
+            "subscription_started": ("success", "Subscription started"),
+            "subscription_renewed": ("success", "Subscription renewed"),
+            "subscription_expired": ("warning", "Subscription expired"),
+            "subscription_cancelled": ("warning", "Subscription cancelled"),
+            "subscription_revoked": ("error", "Subscription revoked"),
+            "purchase_refunded": ("warning", "Purchase refunded"),
+        }
+        if event_name in important_events:
+            severity, title = important_events[event_name]
+            operational_notifier.notify_later(
+                event=f"iap.{event_name}",
+                severity=severity,
+                title=title,
+                message=f"IAP event recorded: {event_name}.",
+                subject={"type": "user", "id": user_id},
+                dedupe_key=f"trade-alert:iap:{user_id}:{event.get('id', event_name)}",
+                metadata={
+                    "product_id": request.product_id,
+                    "product_type": request.product_type,
+                    "status": request.status,
+                    "environment": request.environment,
+                    "platform": request.platform,
+                    "reason": request.reason,
+                },
+            )
+        return IAPTelemetryEventOut(**event)
 
     @app.get("/users/{user_id}/iap/trial", response_model=IAPTrialStatusOut)
     async def get_iap_trial(user_id: str) -> IAPTrialStatusOut:
-        return IAPTrialStatusOut(**repository.get_iap_trial(user_id))
+        trial = repository.get_iap_trial(user_id)
+        if trial["status"] in {"active", "expired", "pending"}:
+            operational_notifier.notify_later(
+                event="iap.trial_status",
+                severity="info" if trial["status"] == "active" else "warning",
+                title="Current seven-day trial status",
+                message="A server-owned trial status was observed.",
+                subject={"type": "user", "id": user_id},
+                dedupe_key=(
+                    f"trade-alert:trial:{user_id}:status:"
+                    f"{trial['current_time'][:10]}:{trial['status']}"
+                ),
+                metadata={
+                    "status": trial["status"],
+                    "remaining_days": trial["remaining_days"],
+                    "elapsed_days": trial["elapsed_days"],
+                    "request_count": trial["request_count"],
+                },
+            )
+        return IAPTrialStatusOut(**trial)
 
     @app.post("/users/{user_id}/iap/trial", response_model=IAPTrialRequestOut)
     async def request_iap_trial(user_id: str) -> IAPTrialRequestOut:
-        return IAPTrialRequestOut(**repository.request_iap_trial(user_id))
+        trial = repository.request_iap_trial(user_id)
+        event_name = "iap.trial_started" if trial["status"] == "active" else "iap.trial_extension_requested"
+        operational_notifier.notify_later(
+            event=event_name,
+            severity="success" if trial["status"] == "active" else "warning",
+            title="Seven-day trial updated",
+            message=trial.get("message", "Server-owned trial status changed."),
+            subject={"type": "user", "id": user_id},
+            dedupe_key=f"trade-alert:trial:{user_id}:{trial['request_count']}:{trial['status']}",
+            metadata={
+                "status": trial["status"],
+                "remaining_days": trial["remaining_days"],
+                "request_count": trial["request_count"],
+            },
+        )
+        return IAPTrialRequestOut(**trial)
 
     @app.get("/users/{user_id}/favorites", response_model=FavoriteListOut)
     async def list_favorites(user_id: str) -> FavoriteListOut:
@@ -649,13 +747,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ) -> IAPTrialAdjustmentOut:
         require_admin(x_admin_token)
         try:
-            return IAPTrialAdjustmentOut(
-                **repository.adjust_iap_trial_period(
+            adjustment = repository.adjust_iap_trial_period(
                     user_id=user_id,
                     days=request.days,
                     reason=request.reason,
                 )
+            operational_notifier.notify_later(
+                event="iap.trial_adjusted",
+                severity="warning",
+                title="Server-owned trial adjusted",
+                message="An administrator adjusted a user trial period.",
+                subject={"type": "user", "id": user_id},
+                dedupe_key=f"trade-alert:trial:{user_id}:adjusted:{adjustment['new_ends_at']}",
+                metadata={"days": request.days, "reason": request.reason, "status": adjustment["status"]},
             )
+            return IAPTrialAdjustmentOut(**adjustment)
         except ValueError as exc:
             if "not found" in str(exc):
                 raise HTTPException(

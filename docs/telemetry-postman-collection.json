@@ -27,6 +27,63 @@
           "response": []
         },
         {
+          "name": "Check Universal Notifier WhatsApp readiness",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{API_BASE}}/readyz",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "readyz"
+              ]
+            },
+            "description": "Read the Universal Notifier state through the Trade Alert API readiness endpoint. Set UNIVERSAL_NOTIFIER_BASE to the same public VPS origin as API_BASE."
+          },
+          "response": []
+        },
+        {
+          "name": "Send Universal Notifier WhatsApp test",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{UNIVERSAL_NOTIFIER_HTTP_TOKEN}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{API_BASE}}/v1/events",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "v1",
+                "events"
+              ]
+            },
+            "description": "Send a non-production operational test through Universal Notifier to the configured WhatsApp destination. Keep the token in a local Postman environment variable.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"system\": \"trade-alert\",\n    \"event\": \"test.message\",\n    \"severity\": \"info\",\n    \"title\": \"Trade Alert WhatsApp test\",\n    \"message\": \"Universal Notifier delivery test.\",\n    \"dedupeKey\": \"trade-alert:postman:test-message\",\n    \"metadata\": {\n      \"source\": \"postman\"\n    }\n  }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
           "name": "Read public AI Outlook availability",
           "request": {
             "method": "GET",
@@ -2097,7 +2154,15 @@
       "type": "string"
     },
     {
-      "key": "ADMIN_TOKEN",
+      "key": "ADMIN_TOKEN"
+    },
+    {
+      "key": "UNIVERSAL_NOTIFIER_BASE",
+      "value": "https://203.0.113.10",
+      "type": "string"
+    },
+    {
+      "key": "UNIVERSAL_NOTIFIER_HTTP_TOKEN",
       "value": "",
       "type": "secret"
     },

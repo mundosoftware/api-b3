@@ -8,6 +8,7 @@ from src.config import Settings, get_settings
 from src.database import parse_iso
 from src.models import AlertRuleOut, RunChecksOut
 from src.onesignal import OneSignalClient, OneSignalError
+from src.operational_notifier import OperationalNotifier
 from src.repositories import Repository
 from src.tickers import QuoteLookupError, TickerService
 
@@ -38,11 +39,13 @@ class AlertEngine:
         ticker_service: TickerService | None = None,
         onesignal: OneSignalClient | None = None,
         settings: Settings | None = None,
+        operational_notifier: OperationalNotifier | None = None,
     ):
         self.settings = settings or get_settings()
         self.repository = repository or Repository(self.settings)
         self.ticker_service = ticker_service or TickerService(self.repository, self.settings)
         self.onesignal = onesignal or OneSignalClient(self.settings)
+        self.operational_notifier = operational_notifier or OperationalNotifier(self.settings)
 
     def run_due_checks(self, now: datetime | None = None) -> RunChecksOut:
         now = self._server_time(now or datetime.now(UTC))
@@ -348,6 +351,16 @@ class AlertEngine:
                 onesignal_notification_id=",".join(notification_ids) or None,
                 status=status,
             )
+            if not sent:
+                self.operational_notifier.notify_later(
+                    event="notification.failure",
+                    severity="error",
+                    title="Alert notification failed",
+                    message="An alert matched but no push notification was delivered.",
+                    subject={"type": "alert_rule", "id": str(rule.id)},
+                    dedupe_key=f"trade-alert:notification:{rule.id}:{self._iso(datetime.now(UTC))[:16]}",
+                    metadata={"ticker": rule.ticker, "status": status},
+                )
             return sent
         except OneSignalError as exc:
             self.repository.log_notification(
@@ -357,6 +370,15 @@ class AlertEngine:
                 title=log_title,
                 body=log_body,
                 status=f"error: {exc}",
+            )
+            self.operational_notifier.notify_later(
+                event="notification.failure",
+                severity="error",
+                title="Push notification provider failed",
+                message="OneSignal rejected an alert notification.",
+                subject={"type": "alert_rule", "id": str(rule.id)},
+                dedupe_key=f"trade-alert:notification:{rule.id}:{self._iso(datetime.now(UTC))[:16]}",
+                metadata={"ticker": rule.ticker, "reason": str(exc)[:200]},
             )
             return False
 
@@ -477,6 +499,16 @@ class AlertEngine:
             price=price,
             percent_change=percent_change,
         )
+        if event_type in {"failure", "error"}:
+            self.operational_notifier.notify_later(
+                event="alert.failure",
+                severity="error",
+                title="Alert processing failed",
+                message=message,
+                subject={"type": "alert_rule", "id": str(rule.id)},
+                dedupe_key=f"trade-alert:alert:{rule.id}:{reason}:{self._iso(now)[:16]}",
+                metadata={"ticker": rule.ticker, "reason": reason},
+            )
 
     def _inside_time_window(self, current: time, start: str, end: str) -> bool:
         start_time = self._parse_hhmm(start)

@@ -6,6 +6,7 @@ from typing import Any
 from src.ai_analysis import DecisionSupportService
 from src.config import Settings, get_settings
 from src.onesignal import OneSignalClient, OneSignalError
+from src.operational_notifier import OperationalNotifier
 from src.repositories import Repository
 
 
@@ -16,6 +17,7 @@ class AIOutlookJobProcessor:
         decision_support: DecisionSupportService | None = None,
         onesignal: OneSignalClient | None = None,
         settings: Settings | None = None,
+        operational_notifier: OperationalNotifier | None = None,
     ):
         self.settings = settings or get_settings()
         self.repository = repository or Repository(self.settings)
@@ -24,6 +26,7 @@ class AIOutlookJobProcessor:
             self.settings,
         )
         self.onesignal = onesignal or OneSignalClient(self.settings)
+        self.operational_notifier = operational_notifier or OperationalNotifier(self.settings)
 
     def requeue_running_jobs(self) -> int:
         return self.repository.requeue_running_ai_outlook_jobs()
@@ -50,6 +53,19 @@ class AIOutlookJobProcessor:
             job["attempt_count"],
             job["max_attempts"],
         )
+        self.operational_notifier.notify_later(
+            event="ai_outlook.attempt",
+            severity="info",
+            title="AI Outlook job attempt started",
+            message="An AI Outlook analysis attempt started.",
+            subject={"type": "job", "id": job["job_id"]},
+            dedupe_key=f"trade-alert:ai-outlook:{job['job_id']}:attempt:{job['attempt_count']}",
+            metadata={
+                "ticker": job["ticker"],
+                "attempt": job["attempt_count"],
+                "max_attempts": job["max_attempts"],
+            },
+        )
         try:
             result = self.decision_support.analysis(
                 job["ticker"],
@@ -72,6 +88,15 @@ class AIOutlookJobProcessor:
                 retry_delay_seconds=self.settings.ai_outlook_retry_delay_seconds,
             )
             if updated and updated["status"] == "failed":
+                self.operational_notifier.notify_later(
+                    event="ai_outlook.failed",
+                    severity="error",
+                    title="AI Outlook job failed",
+                    message="AI Outlook exhausted all retry attempts.",
+                    subject={"type": "job", "id": updated["job_id"]},
+                    dedupe_key=f"trade-alert:ai-outlook:{updated['job_id']}:failed",
+                    metadata={"ticker": updated["ticker"], "attempts": updated["attempt_count"]},
+                )
                 notification_status = self._notify_job(updated, succeeded=False)
                 self.repository.update_ai_outlook_job_notification_status(
                     updated["job_id"],
@@ -81,6 +106,15 @@ class AIOutlookJobProcessor:
 
         completed = self.repository.complete_ai_outlook_job(job["job_id"], result)
         if completed:
+            self.operational_notifier.notify_later(
+                event="ai_outlook.succeeded",
+                severity="success",
+                title="AI Outlook job succeeded",
+                message="AI Outlook completed successfully.",
+                subject={"type": "job", "id": completed["job_id"]},
+                dedupe_key=f"trade-alert:ai-outlook:{completed['job_id']}:succeeded",
+                metadata={"ticker": completed["ticker"], "provider": result.get("provider", "unknown")},
+            )
             notification_status = self._notify_job(completed, succeeded=True)
             self.repository.update_ai_outlook_job_notification_status(
                 completed["job_id"],

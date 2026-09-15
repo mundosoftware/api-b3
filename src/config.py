@@ -39,6 +39,10 @@ class Settings(BaseModel):
     onesignal_watch_app_id: str | None = None
     onesignal_watch_rest_api_key: str | None = None
     onesignal_enabled: bool = True
+    universal_notifier_enabled: bool = False
+    universal_notifier_url: str = "http://127.0.0.1:8787/v1/events"
+    universal_notifier_http_token: str | None = None
+    universal_notifier_timeout_seconds: float = 3.0
     admin_token: str | None = None
 
     @classmethod
@@ -132,6 +136,21 @@ class Settings(BaseModel):
             onesignal_watch_app_id=os.getenv("ONESIGNAL_WATCH_APP_ID") or None,
             onesignal_watch_rest_api_key=os.getenv("ONESIGNAL_WATCH_REST_API_KEY") or None,
             onesignal_enabled=env_bool("ONESIGNAL_ENABLED", cls.model_fields["onesignal_enabled"].default),
+            universal_notifier_enabled=env_bool(
+                "UNIVERSAL_NOTIFIER_ENABLED",
+                cls.model_fields["universal_notifier_enabled"].default,
+            ),
+            universal_notifier_url=os.getenv(
+                "UNIVERSAL_NOTIFIER_URL",
+                cls.model_fields["universal_notifier_url"].default,
+            ),
+            universal_notifier_http_token=os.getenv("UNIVERSAL_NOTIFIER_HTTP_TOKEN") or None,
+            universal_notifier_timeout_seconds=float(
+                os.getenv(
+                    "UNIVERSAL_NOTIFIER_TIMEOUT_SECONDS",
+                    cls.model_fields["universal_notifier_timeout_seconds"].default,
+                )
+            ),
             admin_token=os.getenv("ADMIN_TOKEN") or None,
         )
 
