@@ -61,19 +61,78 @@
               }
             ],
             "url": {
-              "raw": "{{API_BASE}}/v1/events",
+              "raw": "{{UNIVERSAL_NOTIFIER_BASE}}/v1/events",
               "host": [
-                "{{API_BASE}}"
+                "{{UNIVERSAL_NOTIFIER_BASE}}"
               ],
               "path": [
                 "v1",
                 "events"
               ]
             },
-            "description": "Send a non-production operational test through Universal Notifier to the configured WhatsApp destination. Keep the token in a local Postman environment variable.",
+            "description": "Send a mapped Universal Notifier smoke event through the approved un_trade_alert_user_created_v1 WhatsApp template. Keep the token in a local Postman environment variable, use a synthetic user reference, and run only after the template is approved.",
             "body": {
               "mode": "raw",
-              "raw": "{\n    \"system\": \"trade-alert\",\n    \"event\": \"test.message\",\n    \"severity\": \"info\",\n    \"title\": \"Trade Alert WhatsApp test\",\n    \"message\": \"Universal Notifier delivery test.\",\n    \"dedupeKey\": \"trade-alert:postman:test-message\",\n    \"metadata\": {\n      \"source\": \"postman\"\n    }\n  }",
+              "raw": "{\n    \"system\": \"trade-alert\",\n    \"event\": \"user.created\",\n    \"severity\": \"info\",\n    \"title\": \"Trade Alert template smoke test\",\n    \"message\": \"Synthetic template delivery test.\",\n    \"subject\": {\n      \"type\": \"user\",\n      \"id\": \"diagnostic-postman-test\"\n    },\n    \"dedupeKey\": \"trade-alert:postman:user-created-template\",\n    \"metadata\": {\n      \"timezone\": \"UTC\"\n    }\n  }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Trigger Trade Alert user-created notification",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const testUserId = `postman-notification-${Date.now()}`;",
+                  "pm.collectionVariables.set('NOTIFICATION_TEST_USER_ID', testUserId);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Trade Alert created the synthetic user', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.user_id).to.eql(pm.collectionVariables.get('NOTIFICATION_TEST_USER_ID'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{API_BASE}}/users/{{NOTIFICATION_TEST_USER_ID}}",
+              "host": [
+                "{{API_BASE}}"
+              ],
+              "path": [
+                "users",
+                "{{NOTIFICATION_TEST_USER_ID}}"
+              ]
+            },
+            "description": "Exercise the complete notification path through Trade Alert. The pre-request script creates a unique synthetic user ID, PUT /users/{user_id} persists that user, and Trade Alert emits user.created for delivery through the approved un_trade_alert_user_created_v1 WhatsApp template. Each run creates a persistent synthetic user record.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"display_name\": \"Postman Notification Test\",\n    \"timezone\": \"UTC\"\n  }",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2165,6 +2224,11 @@
       "key": "UNIVERSAL_NOTIFIER_HTTP_TOKEN",
       "value": "",
       "type": "secret"
+    },
+    {
+      "key": "NOTIFICATION_TEST_USER_ID",
+      "value": "",
+      "type": "string"
     },
     {
       "key": "USER_ID",

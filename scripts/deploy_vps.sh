@@ -888,9 +888,10 @@ node --input-type=module -e "import { loadConfig, TRADE_ALERT_TEMPLATE_EVENTS } 
 echo '[notifier] Installing systemd unit'
 install -o root -g root -m 644 ${NOTIFIER_SERVICE_REMOTE_TMP} /etc/systemd/system/${UNIVERSAL_NOTIFIER_SERVICE_NAME}.service
 rm -f ${NOTIFIER_SERVICE_REMOTE_TMP}
-echo '[notifier] Reloading and starting systemd unit'
+echo '[notifier] Reloading, enabling, and restarting systemd unit'
 systemctl daemon-reload
-systemctl enable --now ${UNIVERSAL_NOTIFIER_SERVICE_NAME}
+systemctl enable ${UNIVERSAL_NOTIFIER_SERVICE_NAME}
+systemctl restart ${UNIVERSAL_NOTIFIER_SERVICE_NAME}
 EOF
   NOTIFIER_SETUP_REMOTE_TMP="/tmp/${UNIVERSAL_NOTIFIER_SERVICE_NAME}-setup.$$"
   echo "[notifier] Uploading remote installation script"
