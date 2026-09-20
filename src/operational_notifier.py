@@ -9,6 +9,35 @@ import requests
 from src.config import Settings, get_settings
 
 
+TRADE_ALERT_TEMPLATE_EVENTS = frozenset(
+    {
+        "user.created",
+        "iap.purchase_started",
+        "iap.purchase_pending",
+        "iap.purchase_succeeded",
+        "iap.purchase_failed",
+        "iap.purchase_cancelled",
+        "iap.restore_started",
+        "iap.restore_failed",
+        "iap.subscription_started",
+        "iap.subscription_renewed",
+        "iap.subscription_expired",
+        "iap.subscription_cancelled",
+        "iap.subscription_revoked",
+        "iap.purchase_refunded",
+        "iap.trial_status",
+        "iap.trial_started",
+        "iap.trial_extension_requested",
+        "iap.trial_adjusted",
+        "ai_outlook.attempt",
+        "ai_outlook.failed",
+        "ai_outlook.succeeded",
+        "alert.failure",
+        "notification.failure",
+    }
+)
+
+
 class OperationalNotifier:
     def __init__(self, settings: Settings | None = None):
         self.settings = settings or get_settings()
@@ -61,6 +90,9 @@ class OperationalNotifier:
     ) -> None:
         if not self.enabled:
             return
+        if event not in TRADE_ALERT_TEMPLATE_EVENTS:
+            logging.warning("universal_notifier_event_not_mapped event=%s", event[:160])
+            return
         payload = {
             "system": "trade-alert",
             "event": event,
@@ -85,6 +117,19 @@ class OperationalNotifier:
                 timeout=self.settings.universal_notifier_timeout_seconds,
             )
             response.raise_for_status()
+            try:
+                delivery = response.json()
+            except (AttributeError, ValueError):
+                return
+            if isinstance(delivery, dict) and not delivery.get("ok", True):
+                results = delivery.get("results")
+                result = results[0] if isinstance(results, list) and results else {}
+                logging.warning(
+                    "universal_notifier_delivery_failed reason=%s template=%s retryable=%s",
+                    str(result.get("reason", "unknown"))[:160],
+                    str(result.get("templateName", "unknown"))[:160],
+                    bool(result.get("retryable", False)),
+                )
         except Exception as exc:
             logging.warning("universal_notifier_delivery_failed reason=%s", str(exc)[:256])
 

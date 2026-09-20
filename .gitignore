@@ -3,6 +3,7 @@ venv/
 database/
 assets/
 .deps/Universal-Notifier/
+.deps-root-owned-backup/
 .env
 .env.*
 local.env

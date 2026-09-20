@@ -883,6 +883,8 @@ test -f ${UNIVERSAL_NOTIFIER_RUNTIME_REPO_PATH}/.env.local
 echo '[notifier] Installing npm dependencies'
 cd ${UNIVERSAL_NOTIFIER_RUNTIME_REPO_PATH}
 npm install --omit=dev
+echo '[notifier] Verifying Trade Alert template delivery configuration'
+node --input-type=module -e "import { loadConfig, TRADE_ALERT_TEMPLATE_EVENTS } from './src/index.js'; const { whatsapp } = loadConfig(); if (whatsapp.deliveryMode !== 'template') { console.error('[notifier] WHATSAPP_DELIVERY_MODE must be template'); process.exit(1); } if (TRADE_ALERT_TEMPLATE_EVENTS.length !== 23) { console.error('[notifier] Trade Alert template catalog is incomplete'); process.exit(1); } console.log('[notifier] Template delivery enabled (' + whatsapp.templateLanguage + ', 23 events)');"
 echo '[notifier] Installing systemd unit'
 install -o root -g root -m 644 ${NOTIFIER_SERVICE_REMOTE_TMP} /etc/systemd/system/${UNIVERSAL_NOTIFIER_SERVICE_NAME}.service
 rm -f ${NOTIFIER_SERVICE_REMOTE_TMP}

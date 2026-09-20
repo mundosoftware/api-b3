@@ -29,13 +29,15 @@ curl --request GET "{{UNIVERSAL_NOTIFIER_BASE}}/readyz"
 
 Set `UNIVERSAL_NOTIFIER_BASE` to the public VPS origin, for example `https://203.0.113.10`. Trade Alert exposes `/readyz` with the notifier state, while nginx proxies `/v1/events` to the loopback notifier service. A `{"detail":"Not Found"}` response means the API service is running stale code and must be redeployed.
 
-Send a Universal Notifier WhatsApp test. Keep the token in a local shell or Postman environment variable:
+Send a mapped Universal Notifier WhatsApp smoke event. Keep the token in a
+local shell or Postman environment variable, use a clearly synthetic user
+reference, and run it only after `un_trade_alert_user_created_v1` is approved:
 
 ```bash
 curl --request POST "{{UNIVERSAL_NOTIFIER_BASE}}/v1/events" \
   --header "Authorization: Bearer {{UNIVERSAL_NOTIFIER_HTTP_TOKEN}}" \
   --header "Content-Type: application/json" \
-  --data '{"system":"trade-alert","event":"test.message","severity":"info","title":"Trade Alert WhatsApp test","message":"Universal Notifier delivery test.","dedupeKey":"trade-alert:curl:test-message","metadata":{"source":"curl"}}'
+  --data '{"system":"trade-alert","event":"user.created","severity":"info","title":"Trade Alert template smoke test","message":"Synthetic template delivery test.","subject":{"type":"user","id":"diagnostic-curl-test"},"dedupeKey":"trade-alert:curl:user-created-template","metadata":{"timezone":"UTC"}}'
 ```
 
 Read public AI Outlook availability:

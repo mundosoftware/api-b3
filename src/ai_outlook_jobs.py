@@ -95,7 +95,11 @@ class AIOutlookJobProcessor:
                     message="AI Outlook exhausted all retry attempts.",
                     subject={"type": "job", "id": updated["job_id"]},
                     dedupe_key=f"trade-alert:ai-outlook:{updated['job_id']}:failed",
-                    metadata={"ticker": updated["ticker"], "attempts": updated["attempt_count"]},
+                    metadata={
+                        "ticker": updated["ticker"],
+                        "attempts": updated["attempt_count"],
+                        "max_attempts": updated["max_attempts"],
+                    },
                 )
                 notification_status = self._notify_job(updated, succeeded=False)
                 self.repository.update_ai_outlook_job_notification_status(
@@ -113,7 +117,12 @@ class AIOutlookJobProcessor:
                 message="AI Outlook completed successfully.",
                 subject={"type": "job", "id": completed["job_id"]},
                 dedupe_key=f"trade-alert:ai-outlook:{completed['job_id']}:succeeded",
-                metadata={"ticker": completed["ticker"], "provider": result.get("provider", "unknown")},
+                metadata={
+                    "ticker": completed["ticker"],
+                    "attempt": completed["attempt_count"],
+                    "max_attempts": completed["max_attempts"],
+                    "provider": result.get("provider", "unknown"),
+                },
             )
             notification_status = self._notify_job(completed, succeeded=True)
             self.repository.update_ai_outlook_job_notification_status(

@@ -8,10 +8,40 @@ import requests
 from src.application import create_app
 from src.config import Settings
 from src.database import init_db
-from src.operational_notifier import OperationalNotifier
+from src.operational_notifier import OperationalNotifier, TRADE_ALERT_TEMPLATE_EVENTS
 
 
 class OperationalNotifierTest(unittest.TestCase):
+    def test_template_event_contract_covers_trade_alert_producers(self):
+        self.assertEqual(
+            TRADE_ALERT_TEMPLATE_EVENTS,
+            {
+                "user.created",
+                "iap.purchase_started",
+                "iap.purchase_pending",
+                "iap.purchase_succeeded",
+                "iap.purchase_failed",
+                "iap.purchase_cancelled",
+                "iap.restore_started",
+                "iap.restore_failed",
+                "iap.subscription_started",
+                "iap.subscription_renewed",
+                "iap.subscription_expired",
+                "iap.subscription_cancelled",
+                "iap.subscription_revoked",
+                "iap.purchase_refunded",
+                "iap.trial_status",
+                "iap.trial_started",
+                "iap.trial_extension_requested",
+                "iap.trial_adjusted",
+                "ai_outlook.attempt",
+                "ai_outlook.failed",
+                "ai_outlook.succeeded",
+                "alert.failure",
+                "notification.failure",
+            },
+        )
+
     def test_disabled_notifier_does_not_send(self):
         settings = Settings(universal_notifier_enabled=False)
         notifier = OperationalNotifier(settings)
@@ -23,6 +53,50 @@ class OperationalNotifierTest(unittest.TestCase):
                 message="Disabled",
             )
         post.assert_not_called()
+
+    def test_enabled_notifier_does_not_queue_an_unmapped_event(self):
+        settings = Settings(
+            universal_notifier_enabled=True,
+            universal_notifier_url="http://notifier.test/v1/events",
+        )
+        notifier = OperationalNotifier(settings)
+
+        with (
+            patch("src.operational_notifier.threading.Thread") as thread,
+            self.assertLogs(level="WARNING") as logs,
+        ):
+            notifier.notify_later(
+                event="unknown.event",
+                severity="warning",
+                title="Unknown",
+                message="No approved template",
+            )
+
+        thread.assert_not_called()
+        self.assertIn("universal_notifier_event_not_mapped", " ".join(logs.output))
+
+    def test_enabled_notifier_queues_a_catalogued_event(self):
+        settings = Settings(
+            universal_notifier_enabled=True,
+            universal_notifier_url="http://notifier.test/v1/events",
+        )
+        notifier = OperationalNotifier(settings)
+
+        with patch("src.operational_notifier.threading.Thread") as thread:
+            notifier.notify_later(
+                event="user.created",
+                severity="success",
+                title="New user",
+                message="A new user account was created.",
+                subject={"type": "user", "id": "user-123"},
+                metadata={"timezone": "America/Fortaleza"},
+            )
+
+        thread.assert_called_once()
+        payload = thread.call_args.kwargs["args"][0]
+        self.assertEqual(payload["system"], "trade-alert")
+        self.assertEqual(payload["event"], "user.created")
+        self.assertEqual(payload["metadata"]["timezone"], "America/Fortaleza")
 
     def test_enabled_notifier_posts_without_exposing_configuration(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -46,6 +120,40 @@ class OperationalNotifierTest(unittest.TestCase):
                 )
             self.assertEqual(post.call_args.kwargs["headers"]["Authorization"], "Bearer test-token")
             self.assertNotIn("test-token", post.call_args.kwargs["json"].get("message", ""))
+
+    def test_delivery_result_logs_a_terminal_template_failure(self):
+        settings = Settings(
+            universal_notifier_enabled=True,
+            universal_notifier_url="http://notifier.test/v1/events",
+        )
+        notifier = OperationalNotifier(settings)
+        response = type(
+            "Response",
+            (),
+            {
+                "raise_for_status": lambda self: None,
+                "json": lambda self: {
+                    "ok": False,
+                    "results": [
+                        {
+                            "reason": "whatsapp_http_error",
+                            "templateName": "un_trade_alert_user_created_v1",
+                            "retryable": False,
+                        }
+                    ],
+                },
+            },
+        )()
+
+        with (
+            patch("src.operational_notifier.requests.post", return_value=response),
+            self.assertLogs(level="WARNING") as logs,
+        ):
+            notifier._send({"system": "trade-alert", "event": "user.created"})
+
+        message = " ".join(logs.output)
+        self.assertIn("whatsapp_http_error", message)
+        self.assertIn("un_trade_alert_user_created_v1", message)
 
     def test_health_reports_notifier_state_without_secrets(self):
         with tempfile.TemporaryDirectory() as tmpdir:
