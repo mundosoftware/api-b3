@@ -1,0 +1,17 @@
+{
+  "ITUB4": {
+    "cnpj": "60.872.504/0001-23",
+    "company": "ITAU UNIBANCO HOLDING S.A.",
+    "cvm_code": "19348"
+  },
+  "PETR4": {
+    "cnpj": "33.000.167/0001-01",
+    "company": "PETROLEO BRASILEIRO S.A. PETROBRAS",
+    "cvm_code": "9512"
+  },
+  "VALE3": {
+    "cnpj": "33.592.510/0001-54",
+    "company": "VALE S.A.",
+    "cvm_code": "4170"
+  }
+}

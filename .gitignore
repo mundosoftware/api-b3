@@ -13,3 +13,8 @@ local.env.*
 
 /**/.idea/
 /**/__pycache__/
+
+# Local Jev/Kronos research outputs (never commit API responses or reports)
+.cache/jev-post-forecast/
+artifacts/jev-post-forecast/
+.jev-gateway/config.local.yaml

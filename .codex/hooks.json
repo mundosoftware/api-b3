@@ -1,0 +1,18 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jev-gateway hook",
+            "commandWindows": "jev-gateway hook",
+            "timeout": 8,
+            "statusMessage": "Evaluating request with Jev",
+            "additionalContextLimit": 1200
+          }
+        ]
+      }
+    ]
+  }
+}

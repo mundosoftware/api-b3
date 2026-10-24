@@ -1,0 +1,11 @@
+Jev post-forecast experiment
+Run provenance
+Cross-case comparison
+Price paths and targets
+Jev probability audit
+Candidate comparison
+Formula audit
+Evidence
+Exact redacted Jev request state and answers
+Human review
+Export review JSON

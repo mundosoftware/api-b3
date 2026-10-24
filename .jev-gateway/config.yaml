@@ -1,0 +1,91 @@
+version: 3
+project:
+  name: Trade Alert
+  summary: Native app to predict stock prices and try to support investors decisions.
+  capabilities:
+    - Predict stock prices
+    - Provide investment recommendations
+    - Analyze market trends
+  policies: []
+  metadataFiles:
+    - README.md
+    - AGENTS.md
+    - package.json
+    - pyproject.toml
+    - Cargo.toml
+    - go.mod
+  exclude:
+    - .env
+    - .env.*
+    - "*.pem"
+    - "*.key"
+    - "*.p12"
+    - "*.pfx"
+    - "*.jks"
+    - "*credential*"
+    - "*secret*"
+    - node_modules/**
+    - .git/**
+jev:
+  model: jev-latest
+  deadlineMs: 3000
+  maxRetries: 1
+  cacheTtlHours: 24
+promptPolicy:
+  mode: product-engineering
+  broadScope: discovery-first
+  routeFallback: generalist
+modelRouting:
+  enabled: true
+  allowedModels:
+    - gpt-6-luna
+    - gpt-6.1-sol
+    - gpt-6-astra
+  fallbackModel: gpt-6.1-sol
+  confidenceThreshold: 0.55
+thresholds:
+  projectAccept: 0.6
+  projectReject: 0.2
+  actionableOutcome: 0.45
+  userDecisionRequired: 0.7
+  discoveryRequired: 0.55
+  routeConfidence: 0.6
+  contextRelevance: 0.65
+  contextMaxPacks: 3
+  contextTokenBudget: 800
+agents:
+  planner:
+    description: Analyze requirements and produce a decision-complete implementation plan without changing files.
+    reasoningEffort: high
+    sandbox: read-only
+    template: Inspect the repository first. Produce a decision-complete plan. Do not modify files.
+  implementer:
+    description: Implement scoped code changes, verify them, and report concrete results.
+    reasoningEffort: adaptive
+    sandbox: workspace-write
+    template: Implement the requested change, preserve unrelated work, and run proportionate verification.
+  reviewer:
+    description: Review existing code or a change for defects, regressions, security issues, and missing tests.
+    reasoningEffort: high
+    sandbox: read-only
+    template: Review only. Lead with actionable findings supported by file and line evidence.
+  tester:
+    description: Design, run, and repair tests or reproduce a reported failure.
+    reasoningEffort: medium
+    sandbox: workspace-write
+    template: Reproduce the behavior, prefer targeted tests, and distinguish product failures from test defects.
+  generalist:
+    description: Handle project-related questions or mixed software tasks that do not fit a specialist profile.
+    reasoningEffort: adaptive
+    sandbox: workspace-write
+    template: Address the project request directly and verify claims against the repository.
+contextPacks: {}
+telemetry:
+  retentionDays: 30
+  storeRedactedPrompts: true
+dashboard:
+  host: 127.0.0.1
+  port: 4783
+benchmark:
+  runsPerArm: 3
+  minimumCases: 30

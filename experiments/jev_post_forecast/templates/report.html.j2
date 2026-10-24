@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Jev × Kronos experiment · {{ run.run_id }}</title>
+  <style>
+    :root { color-scheme: dark; --bg:#07111f; --panel:#101c2e; --line:#25344d; --text:#e5edf8; --muted:#94a3b8; --cyan:#22d3ee; --green:#4ade80; --amber:#fbbf24; --red:#fb7185; }
+    * { box-sizing: border-box; }
+    body { margin:0; background:radial-gradient(circle at top right,#102a43 0,#07111f 35%); color:var(--text); font:14px/1.45 ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    main { max-width:1500px; margin:auto; padding:38px 24px 80px; }
+    h1 { margin:0 0 8px; font-size:clamp(30px,4vw,52px); letter-spacing:-.04em; }
+    h2 { margin:0 0 16px; font-size:24px; } h3 { margin:0 0 12px; font-size:17px; }
+    p { margin:6px 0; } a { color:var(--cyan); } code { color:#bae6fd; }
+    .eyebrow { color:var(--cyan); text-transform:uppercase; letter-spacing:.16em; font-weight:700; font-size:12px; }
+    .muted { color:var(--muted); } .known { color:var(--green); } .unknown { color:var(--amber); }
+    .notice { margin:20px 0 28px; padding:14px 18px; border:1px solid #854d0e; background:#42200666; border-radius:12px; color:#fde68a; }
+    .grid { display:grid; gap:14px; } .summary { grid-template-columns:repeat(auto-fit,minmax(165px,1fr)); margin:25px 0; }
+    .stat,.panel,.case { background:#101c2edb; border:1px solid var(--line); border-radius:15px; box-shadow:0 18px 50px #02061733; }
+    .stat { padding:15px; } .stat strong { display:block; font-size:24px; margin-top:4px; } .stat span { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.08em; }
+    .panel { padding:20px; margin:20px 0; overflow:auto; }
+    .case { padding:24px; margin:28px 0; }
+    .case-head { display:flex; flex-wrap:wrap; justify-content:space-between; gap:18px; align-items:flex-start; border-bottom:1px solid var(--line); padding-bottom:18px; margin-bottom:20px; }
+    .case-title { font-size:28px; margin:0; } .pills { display:flex; flex-wrap:wrap; gap:8px; }
+    .pill { padding:5px 9px; border:1px solid var(--line); border-radius:999px; color:#cbd5e1; background:#0b1525; }
+    .case-grid { display:grid; grid-template-columns:minmax(0,1.6fr) minmax(320px,1fr); gap:16px; }
+    table { width:100%; border-collapse:collapse; min-width:720px; }
+    th,td { text-align:left; border-bottom:1px solid var(--line); padding:10px 9px; vertical-align:top; }
+    th { color:#93c5fd; font-size:11px; text-transform:uppercase; letter-spacing:.07em; }
+    td small { color:var(--muted); } tr.selected { background:#164e6355; }
+    .chart { min-height:400px; width:100%; }
+    details { border-top:1px solid var(--line); padding:14px 0; } summary { cursor:pointer; font-weight:700; color:#bae6fd; }
+    pre { white-space:pre-wrap; word-break:break-word; background:#07111f; border:1px solid var(--line); border-radius:10px; padding:14px; max-height:420px; overflow:auto; font-size:12px; }
+    .warnings { border-left:3px solid var(--amber); padding-left:14px; } .warnings li { margin:6px 0; }
+    .ratings { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px; }
+    label { color:var(--muted); font-size:12px; } select,textarea { display:block; width:100%; margin-top:5px; color:var(--text); background:#07111f; border:1px solid var(--line); border-radius:8px; padding:9px; }
+    textarea { min-height:100px; resize:vertical; } button { background:var(--cyan); color:#06202b; border:0; border-radius:9px; padding:11px 16px; font-weight:800; cursor:pointer; }
+    .formula { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:8px; } .formula div { background:#07111f; padding:10px; border-radius:8px; } .formula b { display:block; color:#93c5fd; }
+    footer { color:var(--muted); margin-top:40px; }
+    @media(max-width:900px){ .case-grid{grid-template-columns:1fr;} main{padding:24px 14px 60px;} .case{padding:16px;} }
+  </style>
+  <script>{{ plotly_js | safe }}</script>
+</head>
+<body>
+<main>
+  <div class="eyebrow">Local research harness · {{ run.mode }}</div>
+  <h1>Jev post-forecast experiment</h1>
+  <p class="muted">Run {{ run.run_id }} · {{ run.started_at }} → {{ run.finished_at }}</p>
+  <div class="notice">Experimental decision support only. No calibrated return claim and no automated buy/sell recommendation. “Judgment clarity” measures concentration in Jev’s answer distribution—not forecast accuracy.</div>
+
+  <section class="grid summary">
+    <div class="stat"><span>Cases</span><strong>{{ run.summary.case_count }}</strong><small>{{ run.summary.historical_case_count }} historical · {{ run.summary.live_case_count }} live</small></div>
+    <div class="stat"><span>Failures</span><strong>{{ run.summary.failure_count }}</strong></div>
+    <div class="stat"><span>Evidence docs</span><strong>{{ run.summary.evidence_documents }}</strong></div>
+    <div class="stat"><span>Jev input tokens</span><strong>{{ run.summary.jev_input_tokens }}</strong><small>estimated ${{ '%.6f'|format(run.summary.jev_estimated_cost_usd) }}</small></div>
+    <div class="stat"><span>Jev latency</span><strong>{{ run.summary.jev_latency_ms | num }} ms</strong></div>
+    <div class="stat"><span>Kronos latency</span><strong>{{ run.summary.kronos_latency_ms | num }} ms</strong></div>
+  </section>
+
+  <section class="panel">
+    <h2>Run provenance</h2>
+    <table><tbody>
+      <tr><th>Kronos</th><td>{{ run.provenance.kronos_model }} · CPU · context {{ run.provenance.kronos_context }} · {{ run.provenance.kronos_sample_count }} samples · seed {{ run.seed }}</td></tr>
+      <tr><th>Jev</th><td>{{ run.provenance.jev_model_requested }} · estimated ${{ run.provenance.jev_input_price_per_million_tokens_usd }}/M input tokens</td></tr>
+      <tr><th>Sources</th><td>{{ run.provenance.candle_source }} · {{ run.provenance.evidence_sources | join(' · ') }}</td></tr>
+      <tr><th>Runtime</th><td>Python {{ run.provenance.python }} · {{ run.provenance.platform }}</td></tr>
+    </tbody></table>
+  </section>
+
+  {% if run.failures %}<section class="panel"><h2>Failures</h2><table><thead><tr><th>Ticker</th><th>Case</th><th>Type</th><th>Message</th></tr></thead><tbody>{% for item in run.failures %}<tr><td>{{ item.ticker }}</td><td>{{ item.case_id or item.case_kind }}</td><td>{{ item.error_type }}</td><td>{{ item.message }}</td></tr>{% endfor %}</tbody></table></section>{% endif %}
+
+  <section class="panel">
+    <h2>Cross-case comparison</h2>
+    <table><thead><tr><th>Case</th><th>Evidence</th><th>Kronos</th><th>Scenario</th><th>Rule adjusted</th><th>Jev final</th><th>Outlook / risk</th><th>Outcome</th></tr></thead><tbody>
+    {% for case in run.cases %}<tr>
+      <td><b>{{ case.ticker }}</b><br><small>{{ case.case_kind }} · {{ case.analysis_cutoff[:10] }}</small></td>
+      <td>{{ case.evidence_label }}<br><small>{{ case.evidence_coverage.document_count }} docs · {{ case.evidence_coverage.character_count }} chars</small></td>
+      <td>{{ case.candidates.kronos.return_percent | pct }}<br><small>{{ case.candidates.kronos.target_price | num }}</small></td>
+      <td>{{ case.candidates.semantic_scenario.return_percent | pct }}<br><small>{{ case.candidates.semantic_scenario.target_price | num }}</small></td>
+      <td>{{ case.candidates.rule_adjusted.return_percent | pct }}<br><small>{{ case.candidates.rule_adjusted.target_price | num }}</small></td>
+      <td><b>{{ case.selection.selected_variant }}</b><br><small>{{ case.selection.return_percent | pct }} · clarity {{ '%.2f'|format(case.selection.judgment_clarity) }}</small></td>
+      <td>{{ case.selection.outlook }} / {{ case.selection.risk }}</td>
+      <td>{% if case.actual_target_price is not none %}<span class="known">known · {{ case.actual_target_price | num }}</span>{% else %}<span class="unknown">not yet known</span>{% endif %}</td>
+    </tr>{% endfor %}
+    </tbody></table>
+  </section>
+
+  {% for case in run.cases %}
+  <article class="case" id="{{ case.case_id }}">
+    <header class="case-head"><div><div class="eyebrow">{{ case.case_kind }} · {{ case.evidence_label }}</div><h2 class="case-title">{{ case.ticker }} · {{ case.analysis_cutoff[:10] }}</h2><p class="muted">{{ case.case_id }}</p></div><div class="pills"><span class="pill">selected: {{ case.selection.selected_variant }}</span><span class="pill">{{ case.selection.outlook }}</span><span class="pill">risk: {{ case.selection.risk }}</span><span class="pill">clarity: {{ '%.2f'|format(case.selection.judgment_clarity) }}</span></div></header>
+    <div class="case-grid"><section class="panel"><h3>Price paths and targets</h3><div class="chart" id="{{ charts[case.case_id].price_id }}"></div></section><section class="panel"><h3>Jev probability audit</h3><div class="chart" id="{{ charts[case.case_id].probability_id }}"></div></section></div>
+
+    <section class="panel"><h3>Candidate comparison</h3><table><thead><tr><th>Variant</th><th>Return</th><th>Target</th><th>Terminal error</th><th>APE</th><th>Direction</th><th>Δ APE vs Kronos</th></tr></thead><tbody>
+      {% for name, candidate in case.candidates.items() %}<tr class="{% if name == case.selection.selected_variant %}selected{% endif %}"><td><b>{{ name }}</b>{% if name == case.selection.selected_variant %} · selected{% endif %}</td><td>{{ candidate.return_percent | pct }}</td><td>{{ candidate.target_price | num }}</td><td>{{ candidate.metrics.terminal_error_percent | pct }}</td><td>{{ candidate.metrics.absolute_percentage_error | pct }}</td><td>{{ '—' if candidate.metrics.direction_correct is none else ('correct' if candidate.metrics.direction_correct else 'wrong') }}</td><td>{{ candidate.improvement_vs_kronos_ape | pct }}</td></tr>{% endfor %}
+    </tbody></table>{% if case.outcome_status == 'not_yet_known' %}<p class="unknown">Live case: realized outcomes are not yet known; error columns intentionally remain blank.</p>{% endif %}</section>
+
+    <section class="panel"><h3>Formula audit</h3><div class="formula">{% for name, value in case.formula_audit.inputs.items() %}<div><b>{{ name }}</b>{{ value }}</div>{% endfor %}<div><b>semantic return proxy</b>{{ case.formula_audit.semantic_return_proxy }}<small class="muted"> dimensionless, not a calibrated return</small></div><div><b>outlook threshold</b>{{ case.quantitative_audit.outlook_threshold_percent | pct }}</div><div><b>quantitative risk</b>{{ case.selection.quantitative_risk }}</div><div><b>Jev risk score</b>{{ case.selection.jev_risk_score }}</div></div></section>
+
+    <section class="panel"><h3>Warnings</h3><ul class="warnings">{% for warning in case.warnings %}<li>{{ warning }}</li>{% endfor %}</ul></section>
+
+    <section class="panel"><h3>Evidence</h3><table><thead><tr><th>Source</th><th>Published</th><th>Title / subject</th><th>Excerpt</th><th>Mode</th></tr></thead><tbody>{% for item in case.evidence %}<tr><td>{{ item.source }}</td><td>{{ item.published_at }}</td><td>{% if item.url %}<a href="{{ item.url }}">{{ item.title or item.subject }}</a>{% else %}{{ item.title or item.subject }}{% endif %}<br><small>{{ item.publisher or item.category }}</small></td><td>{{ (item.excerpt or item.content)[:500] }}</td><td>{{ item.content_mode }}</td></tr>{% endfor %}</tbody></table></section>
+
+    <details><summary>Exact redacted Jev request state and answers</summary><h3>Stage 1</h3><pre>{{ case.jev_stage1 | json_pretty }}</pre><h3>Stage 2</h3><pre>{{ case.jev_stage2 | json_pretty }}</pre></details>
+    <section class="panel review" data-case="{{ case.case_id }}"><h3>Human review</h3><div class="ratings">{% for key,label in [('evidence_relevance','Evidence relevance'),('semantic_judgment','Semantic judgment'),('candidate_plausibility','Candidate plausibility'),('final_selection','Final selection'),('warning_usefulness','Warning usefulness')] %}<label>{{ label }}<select data-field="{{ key }}"><option value="">Choose 1–5</option>{% for score in range(1,6) %}<option value="{{ score }}">{{ score }}</option>{% endfor %}</select></label>{% endfor %}</div><label>Notes<textarea data-field="notes" placeholder="What looked coherent, unstable, or misleading?"></textarea></label></section>
+  </article>
+  {% endfor %}
+
+  <button id="export-review">Export review JSON</button>
+  <footer><p>Six historical cases are descriptive evidence, not statistical validation. Portuguese evidence is preserved unchanged for qualitative review.</p></footer>
+</main>
+<script id="run-data" type="application/json">{{ run_json | safe }}</script>
+<script>
+  const reportRun = JSON.parse(document.getElementById('run-data').textContent);
+  {% for case in run.cases %}Plotly.newPlot('{{ charts[case.case_id].price_id }}', {{ charts[case.case_id].price_data | safe }}, {{ charts[case.case_id].price_layout | safe }}, {responsive:true,displaylogo:false}); Plotly.newPlot('{{ charts[case.case_id].probability_id }}', {{ charts[case.case_id].probability_data | safe }}, {{ charts[case.case_id].probability_layout | safe }}, {responsive:true,displaylogo:false});{% endfor %}
+  const storageKey = `jev-kronos-review:${reportRun.run_id}`;
+  const saved = JSON.parse(localStorage.getItem(storageKey) || '{}');
+  document.querySelectorAll('.review').forEach(section => { const id=section.dataset.case; const prior=saved[id]||{}; section.querySelectorAll('[data-field]').forEach(input => { input.value=prior[input.dataset.field]||''; input.addEventListener('input', () => { saved[id]=saved[id]||{}; saved[id][input.dataset.field]=input.value; localStorage.setItem(storageKey,JSON.stringify(saved)); }); }); });
+  document.getElementById('export-review').addEventListener('click', () => { const payload={run_id:reportRun.run_id, exported_at:new Date().toISOString(), reviews:saved}; const blob=new Blob([JSON.stringify(payload,null,2)+'\n'],{type:'application/json'}); const link=document.createElement('a'); link.href=URL.createObjectURL(blob); link.download='review.json'; link.click(); URL.revokeObjectURL(link.href); });
+</script>
+</body>
+</html>
