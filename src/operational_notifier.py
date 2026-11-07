@@ -9,7 +9,7 @@ import requests
 from src.config import Settings, get_settings
 
 
-TRADE_ALERT_TEMPLATE_EVENTS = frozenset(
+TRADE_ALERT_KNOWN_EVENTS = frozenset(
     {
         "user.created",
         "iap.purchase_started",
@@ -34,6 +34,15 @@ TRADE_ALERT_TEMPLATE_EVENTS = frozenset(
         "ai_outlook.succeeded",
         "alert.failure",
         "notification.failure",
+    }
+)
+
+# Keep the WhatsApp surface deliberately small. Known events outside this set are
+# silently ignored so high-volume operational telemetry cannot flood the admin.
+TRADE_ALERT_TEMPLATE_EVENTS = frozenset(
+    {
+        "user.created",
+        "iap.trial_extension_requested",
     }
 )
 
@@ -90,8 +99,10 @@ class OperationalNotifier:
     ) -> None:
         if not self.enabled:
             return
-        if event not in TRADE_ALERT_TEMPLATE_EVENTS:
+        if event not in TRADE_ALERT_KNOWN_EVENTS:
             logging.warning("universal_notifier_event_not_mapped event=%s", event[:160])
+            return
+        if event not in TRADE_ALERT_TEMPLATE_EVENTS:
             return
         payload = {
             "system": "trade-alert",

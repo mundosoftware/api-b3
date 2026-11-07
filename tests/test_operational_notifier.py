@@ -12,33 +12,12 @@ from src.operational_notifier import OperationalNotifier, TRADE_ALERT_TEMPLATE_E
 
 
 class OperationalNotifierTest(unittest.TestCase):
-    def test_template_event_contract_covers_trade_alert_producers(self):
+    def test_template_event_contract_contains_only_approved_whatsapp_events(self):
         self.assertEqual(
             TRADE_ALERT_TEMPLATE_EVENTS,
             {
                 "user.created",
-                "iap.purchase_started",
-                "iap.purchase_pending",
-                "iap.purchase_succeeded",
-                "iap.purchase_failed",
-                "iap.purchase_cancelled",
-                "iap.restore_started",
-                "iap.restore_failed",
-                "iap.subscription_started",
-                "iap.subscription_renewed",
-                "iap.subscription_expired",
-                "iap.subscription_cancelled",
-                "iap.subscription_revoked",
-                "iap.purchase_refunded",
-                "iap.trial_status",
-                "iap.trial_started",
                 "iap.trial_extension_requested",
-                "iap.trial_adjusted",
-                "ai_outlook.attempt",
-                "ai_outlook.failed",
-                "ai_outlook.succeeded",
-                "alert.failure",
-                "notification.failure",
             },
         )
 
@@ -97,6 +76,23 @@ class OperationalNotifierTest(unittest.TestCase):
         self.assertEqual(payload["system"], "trade-alert")
         self.assertEqual(payload["event"], "user.created")
         self.assertEqual(payload["metadata"]["timezone"], "America/Fortaleza")
+
+    def test_enabled_notifier_silently_ignores_known_non_whatsapp_event(self):
+        settings = Settings(
+            universal_notifier_enabled=True,
+            universal_notifier_url="http://notifier.test/v1/events",
+        )
+        notifier = OperationalNotifier(settings)
+
+        with patch("src.operational_notifier.threading.Thread") as thread:
+            notifier.notify_later(
+                event="alert.failure",
+                severity="error",
+                title="Alert failed",
+                message="No push notification was delivered.",
+            )
+
+        thread.assert_not_called()
 
     def test_enabled_notifier_posts_without_exposing_configuration(self):
         with tempfile.TemporaryDirectory() as tmpdir:

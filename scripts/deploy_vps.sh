@@ -8,12 +8,13 @@ SKIP_INSTALL="false"
 ENV_FILE=""
 CLEANUP_FILES=()
 SSH_AGENT_STARTED="false"
+RESET_UNIVERSAL_NOTIFIER="false"
 
 usage() {
   cat <<EOF
 Usage:
   ./scripts/deploy_vps.sh local [local.env] [--no-start] [--skip-install]
-  ./scripts/deploy_vps.sh vps [local.env]
+  ./scripts/deploy_vps.sh vps [local.env] [--reset-notifier]
   ./scripts/deploy_vps.sh [local.env]
 
 Modes:
@@ -23,6 +24,9 @@ Modes:
 Options:
   --no-start       Local mode only: install/init but do not start Uvicorn.
   --skip-install   Local mode only: skip pip install, useful when venv is ready.
+  --reset-notifier VPS mode only: stop the notifier before sync and clear its
+                   persisted delivery state before the service is restarted.
+                   This flag applies only to the current deploy invocation.
   -h, --help       Show this help.
 
 SSH keychain env:
@@ -61,6 +65,9 @@ while [[ $# -gt 0 ]]; do
       ;;
     --skip-install)
       SKIP_INSTALL="true"
+      ;;
+    --reset-notifier)
+      RESET_UNIVERSAL_NOTIFIER="true"
       ;;
     -h|--help)
       usage
@@ -139,6 +146,7 @@ UNIVERSAL_NOTIFIER_HTTP_HOST="${UNIVERSAL_NOTIFIER_HTTP_HOST:-127.0.0.1}"
 UNIVERSAL_NOTIFIER_HTTP_PORT="${UNIVERSAL_NOTIFIER_HTTP_PORT:-8787}"
 UNIVERSAL_NOTIFIER_URL="${UNIVERSAL_NOTIFIER_URL:-http://${UNIVERSAL_NOTIFIER_HTTP_HOST}:${UNIVERSAL_NOTIFIER_HTTP_PORT}/v1/events}"
 UNIVERSAL_NOTIFIER_SERVICE_NAME="${UNIVERSAL_NOTIFIER_SERVICE_NAME:-${SERVICE_NAME:-b3-watch-api}-notifier}"
+TRADE_ALERT_NOTIFIER_ALLOWED_EVENTS="trade-alert:user.created,trade-alert:iap.trial_extension_requested"
 HEALTH_CHECK_RETRIES="${HEALTH_CHECK_RETRIES:-30}"
 HEALTH_CHECK_INTERVAL_SECONDS="${HEALTH_CHECK_INTERVAL_SECONDS:-2}"
 LETSENCRYPT_EMAIL="${LETSENCRYPT_EMAIL:-}"
@@ -419,6 +427,10 @@ run_local() {
 }
 
 if [[ "${MODE}" == "local" ]]; then
+  if [[ "${RESET_UNIVERSAL_NOTIFIER}" == "true" ]]; then
+    echo "--reset-notifier is only supported in VPS mode" >&2
+    exit 1
+  fi
   run_local
   exit 0
 fi
@@ -807,6 +819,24 @@ install_universal_notifier_source() {
   fi
 }
 
+stop_universal_notifier_for_one_time_reset() {
+  if [[ "${RESET_UNIVERSAL_NOTIFIER}" != "true" ]]; then
+    return
+  fi
+
+  echo "[notifier] One-time reset: stopping ${UNIVERSAL_NOTIFIER_SERVICE_NAME} before source sync"
+  remote_sudo "systemctl stop '${UNIVERSAL_NOTIFIER_SERVICE_NAME}' 2>/dev/null || true"
+}
+
+clear_universal_notifier_state_for_one_time_reset() {
+  if [[ "${RESET_UNIVERSAL_NOTIFIER}" != "true" ]]; then
+    return
+  fi
+
+  echo "[notifier] One-time reset: clearing persisted delivery history and dedupe state"
+  remote "cd '${UNIVERSAL_NOTIFIER_RUNTIME_REPO_PATH}' && node --input-type=module -e \"import fs from 'node:fs'; import { loadConfig } from './src/config.js'; fs.rmSync(loadConfig().statePath, { force: true });\""
+}
+
 sync_universal_notifier_env() {
   if ! truthy "${UNIVERSAL_NOTIFIER_ENABLED}"; then
     return
@@ -842,6 +872,7 @@ configure_universal_notifier_service() {
 
   install_universal_notifier_source
   sync_universal_notifier_env
+  clear_universal_notifier_state_for_one_time_reset
   echo "[notifier] Preparing systemd service definition"
   NOTIFIER_SERVICE_TMP="$(mktemp)"
   CLEANUP_FILES+=("${NOTIFIER_SERVICE_TMP}")
@@ -855,6 +886,7 @@ Wants=network-online.target
 User=${APP_USER}
 WorkingDirectory=${UNIVERSAL_NOTIFIER_RUNTIME_REPO_PATH}
 EnvironmentFile=${UNIVERSAL_NOTIFIER_RUNTIME_REPO_PATH}/.env.local
+Environment="UNIVERSAL_NOTIFIER_ALLOWED_EVENTS=${TRADE_ALERT_NOTIFIER_ALLOWED_EVENTS}"
 ExecStart=/usr/bin/node src/cli.js serve
 Restart=always
 RestartSec=5
@@ -884,7 +916,7 @@ echo '[notifier] Installing npm dependencies'
 cd ${UNIVERSAL_NOTIFIER_RUNTIME_REPO_PATH}
 npm install --omit=dev
 echo '[notifier] Verifying Trade Alert template delivery configuration'
-node --input-type=module -e "import { loadConfig, TRADE_ALERT_TEMPLATE_EVENTS } from './src/index.js'; const { whatsapp } = loadConfig(); if (whatsapp.deliveryMode !== 'template') { console.error('[notifier] WHATSAPP_DELIVERY_MODE must be template'); process.exit(1); } if (TRADE_ALERT_TEMPLATE_EVENTS.length !== 23) { console.error('[notifier] Trade Alert template catalog is incomplete'); process.exit(1); } console.log('[notifier] Template delivery enabled (' + whatsapp.templateLanguage + ', 23 events)');"
+UNIVERSAL_NOTIFIER_ALLOWED_EVENTS='${TRADE_ALERT_NOTIFIER_ALLOWED_EVENTS}' node --input-type=module -e "import { loadConfig, TRADE_ALERT_TEMPLATE_EVENTS } from './src/index.js'; const config = loadConfig(); const expected = ['iap.trial_extension_requested', 'user.created']; const expectedPolicy = ['trade-alert:user.created', 'trade-alert:iap.trial_extension_requested']; const actual = [...TRADE_ALERT_TEMPLATE_EVENTS].sort(); if (config.whatsapp.deliveryMode !== 'template') { console.error('[notifier] WHATSAPP_DELIVERY_MODE must be template'); process.exit(1); } if (JSON.stringify(actual) !== JSON.stringify(expected)) { console.error('[notifier] Trade Alert template catalog must contain only: ' + expected.join(', ')); process.exit(1); } if (JSON.stringify(config.allowedEvents) !== JSON.stringify(expectedPolicy)) { console.error('[notifier] Service event policy is not restricted to the two Trade Alert events'); process.exit(1); } console.log('[notifier] Template delivery enabled (' + config.whatsapp.templateLanguage + ', 2 events)');"
 echo '[notifier] Installing systemd unit'
 install -o root -g root -m 644 ${NOTIFIER_SERVICE_REMOTE_TMP} /etc/systemd/system/${UNIVERSAL_NOTIFIER_SERVICE_NAME}.service
 rm -f ${NOTIFIER_SERVICE_REMOTE_TMP}
@@ -932,6 +964,8 @@ if truthy "${UNIVERSAL_NOTIFIER_ENABLED}"; then
   remote_sudo "curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && apt-get install -y nodejs"
 fi
 remote_sudo "mkdir -p '${APP_DIR}' && chown -R '${APP_USER}:${APP_USER}' '${APP_DIR}'"
+
+stop_universal_notifier_for_one_time_reset
 
 echo "Syncing source"
 rsync -az --delete \
