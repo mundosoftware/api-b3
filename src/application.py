@@ -6,6 +6,7 @@ from typing import Literal
 
 from fastapi import FastAPI, Header, HTTPException, Query, Response, status
 from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import HTMLResponse
 
 from src.ai_analysis import DecisionSupportService, PredictionError
 from src.ai_outlook_jobs import AIOutlookJobProcessor, run_ai_outlook_job_loop
@@ -56,15 +57,25 @@ from src.models import (
     NotificationPreferencesOut,
     NotificationPreferencesUpdateRequest,
     NotificationLogListOut,
+    PromotionAdminCreateRequest,
+    PromotionAdminUpdateRequest,
+    PromotionAvailabilityOut,
+    PromotionCodeUpdateRequest,
+    PromotionCodeImportRequest,
+    PromotionDismissRequest,
+    PromotionRedemptionOut,
+    PromotionRedemptionRequest,
     QuoteOut,
     RunChecksOut,
     TelemetryFailureListOut,
+    TrialExtensionGrantOut,
     UserTelemetryListOut,
     UserOut,
     UserUpsertRequest,
 )
 from src.onesignal import OneSignalClient, OneSignalError
 from src.operational_notifier import OperationalNotifier
+from src.promotion_panel import PROMOTION_PANEL_HTML
 from src.repositories import Repository
 from src.telemetry import TelemetryService
 from src.tickers import QuoteLookupError, TickerService
@@ -495,6 +506,65 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
         return IAPTrialRequestOut(**trial)
 
+    @app.post(
+        "/users/{user_id}/iap/trial/engagement-extension",
+        response_model=TrialExtensionGrantOut,
+    )
+    async def grant_trial_engagement_extension(user_id: str) -> TrialExtensionGrantOut:
+        return TrialExtensionGrantOut(
+            **repository.grant_engagement_trial_extension(user_id, days=7)
+        )
+
+    @app.get(
+        "/users/{user_id}/promotions/available",
+        response_model=PromotionAvailabilityOut,
+    )
+    async def available_promotion(
+        user_id: str,
+        response: Response,
+        language: str = Query(default="pt", pattern="^(pt|en)([-_].*)?$"),
+        has_prior_purchase: bool = Query(default=False),
+    ) -> PromotionAvailabilityOut:
+        response.headers["Cache-Control"] = "no-store, private"
+        return PromotionAvailabilityOut(
+            **repository.promotion_availability(
+                user_id,
+                language=language,
+                client_has_prior_purchase=has_prior_purchase,
+            )
+        )
+
+    @app.post(
+        "/users/{user_id}/promotions/{slug}/home-visibility",
+        status_code=status.HTTP_204_NO_CONTENT,
+    )
+    async def update_promotion_home_visibility(
+        user_id: str,
+        slug: str,
+        request: PromotionDismissRequest,
+    ) -> Response:
+        try:
+            repository.dismiss_promotion_on_home(user_id, slug, request.hide_on_home)
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    @app.post(
+        "/users/{user_id}/promotions/{slug}/redemptions",
+        response_model=PromotionRedemptionOut,
+    )
+    async def record_promotion_redemption(
+        user_id: str,
+        slug: str,
+        request: PromotionRedemptionRequest,
+    ) -> PromotionRedemptionOut:
+        try:
+            return PromotionRedemptionOut(
+                **repository.record_promotion_redemption(user_id, slug, request)
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
     @app.get("/users/{user_id}/favorites", response_model=FavoriteListOut)
     async def list_favorites(user_id: str) -> FavoriteListOut:
         return FavoriteListOut(result=repository.list_favorites(user_id))
@@ -550,6 +620,85 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def run_checks(x_admin_token: str | None = Header(default=None)) -> RunChecksOut:
         require_admin(x_admin_token)
         return await run_in_threadpool(alert_engine.run_due_checks)
+
+    @app.get("/admin/promotions", response_class=HTMLResponse)
+    async def promotions_panel() -> HTMLResponse:
+        return HTMLResponse(PROMOTION_PANEL_HTML)
+
+    @app.get("/admin/promotions/api")
+    async def admin_list_promotions(
+        x_admin_token: str | None = Header(default=None),
+    ) -> list[dict[str, object]]:
+        require_admin(x_admin_token)
+        return repository.list_promotions_for_admin()
+
+    @app.post("/admin/promotions", status_code=status.HTTP_201_CREATED)
+    async def admin_create_promotion(
+        request: PromotionAdminCreateRequest,
+        x_admin_token: str | None = Header(default=None),
+    ) -> dict[str, object]:
+        require_admin(x_admin_token)
+        try:
+            return repository.create_promotion_for_admin(request)
+        except (ValueError, StopIteration) as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    @app.patch("/admin/promotions/{promotion_id}")
+    async def admin_update_promotion(
+        promotion_id: int,
+        request: PromotionAdminUpdateRequest,
+        x_admin_token: str | None = Header(default=None),
+    ) -> dict[str, object]:
+        require_admin(x_admin_token)
+        try:
+            return repository.update_promotion_for_admin(promotion_id, request)
+        except (ValueError, StopIteration) as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    @app.get("/admin/promotions/{promotion_id}/codes")
+    async def admin_list_promotion_codes(
+        promotion_id: int,
+        response: Response,
+        limit: int = Query(default=200, ge=1, le=2000),
+        code_status: str | None = Query(
+            default=None,
+            alias="status",
+            pattern="^(available|reserved|redeemed)$",
+        ),
+        x_admin_token: str | None = Header(default=None),
+    ) -> list[dict[str, object]]:
+        require_admin(x_admin_token)
+        response.headers["Cache-Control"] = "no-store, private"
+        return repository.list_promotion_codes_for_admin(
+            promotion_id, limit=limit, status=code_status
+        )
+
+    @app.post("/admin/promotions/{promotion_id}/codes/import")
+    async def admin_import_promotion_codes(
+        promotion_id: int,
+        request: PromotionCodeImportRequest,
+        x_admin_token: str | None = Header(default=None),
+    ) -> dict[str, int]:
+        require_admin(x_admin_token)
+        try:
+            return repository.import_promotion_codes_for_admin(promotion_id, request)
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    @app.patch("/admin/promotions/{promotion_id}/codes/{code_id}")
+    async def admin_update_promotion_code(
+        promotion_id: int,
+        code_id: int,
+        request: PromotionCodeUpdateRequest,
+        x_admin_token: str | None = Header(default=None),
+    ) -> dict[str, object]:
+        require_admin(x_admin_token)
+        try:
+            return repository.update_promotion_code_for_admin(
+                promotion_id, code_id, request.enabled
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
     @app.get("/admin/features/ai-outlook", response_model=FeatureFlagOut)
     async def admin_get_ai_outlook_feature(

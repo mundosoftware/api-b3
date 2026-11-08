@@ -459,6 +459,134 @@ class IAPTrialRequestOut(IAPTrialStatusOut):
     pass
 
 
+class TrialExtensionGrantOut(BaseModel):
+    granted: bool
+    reason: str
+    extension_days: int = 0
+    trial: IAPTrialStatusOut
+
+
+class PromotionTextOut(BaseModel):
+    title: str
+    body: str
+    cta_label: str
+    home_suppression_label: str
+    plans_notice: str
+
+
+class PromotionOfferOut(BaseModel):
+    id: int
+    slug: str
+    name: str
+    product_id: str
+    code: str
+    redeem_url: str
+    promotional_price_brl: float
+    discount_percent: float
+    starts_at: str
+    ends_at: str
+    show_on_home: bool
+    allow_home_suppression: bool
+    show_on_paywall: bool
+    text: PromotionTextOut
+
+
+class PromotionAvailabilityOut(BaseModel):
+    available: bool
+    reason: str
+    promotion: PromotionOfferOut | None = None
+
+
+class PromotionDismissRequest(BaseModel):
+    hide_on_home: bool = True
+
+
+class PromotionRedemptionRequest(BaseModel):
+    product_id: str = Field(min_length=1, max_length=128)
+    transaction_id: str = Field(min_length=1, max_length=128)
+    original_transaction_id: str | None = Field(default=None, max_length=128)
+    offer_id: str | None = Field(default=None, max_length=128)
+    environment: str | None = Field(default=None, max_length=32)
+
+
+class PromotionRedemptionOut(BaseModel):
+    recorded: bool
+    promotion_slug: str
+    user_id: str
+    product_id: str
+    transaction_id: str
+    redeemed_at: str
+
+
+class PromotionAdminUpdateRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    enabled: bool | None = None
+    product_id: str | None = Field(default=None, min_length=1, max_length=128)
+    promotional_price_brl: float | None = Field(default=None, ge=0)
+    discount_percent: float | None = Field(default=None, ge=0, le=100)
+    starts_at: str | None = Field(default=None, max_length=40)
+    ends_at: str | None = Field(default=None, max_length=40)
+    show_on_home: bool | None = None
+    allow_home_suppression: bool | None = None
+    show_on_paywall: bool | None = None
+    title_pt: str | None = Field(default=None, max_length=160)
+    title_en: str | None = Field(default=None, max_length=160)
+    body_pt: str | None = Field(default=None, max_length=1000)
+    body_en: str | None = Field(default=None, max_length=1000)
+    cta_pt: str | None = Field(default=None, max_length=120)
+    cta_en: str | None = Field(default=None, max_length=120)
+    home_suppression_label_pt: str | None = Field(default=None, max_length=240)
+    home_suppression_label_en: str | None = Field(default=None, max_length=240)
+    plans_notice_pt: str | None = Field(default=None, max_length=500)
+    plans_notice_en: str | None = Field(default=None, max_length=500)
+
+
+class PromotionAdminCreateRequest(BaseModel):
+    slug: str = Field(pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$", min_length=3, max_length=80)
+    name: str = Field(min_length=1, max_length=120)
+    product_id: str = Field(min_length=1, max_length=128)
+    starts_at: str = Field(max_length=40)
+    ends_at: str = Field(max_length=40)
+    promotional_price_brl: float = Field(default=0, ge=0)
+    discount_percent: float = Field(default=0, ge=0, le=100)
+    enabled: bool = False
+    show_on_home: bool = True
+    allow_home_suppression: bool = True
+    show_on_paywall: bool = True
+    title_pt: str = Field(default="Nova promoção", max_length=160)
+    title_en: str = Field(default="New promotion", max_length=160)
+    body_pt: str = Field(default="Oferta por tempo limitado.", max_length=1000)
+    body_en: str = Field(default="Limited-time offer.", max_length=1000)
+    cta_pt: str = Field(default="Resgatar oferta", max_length=120)
+    cta_en: str = Field(default="Redeem offer", max_length=120)
+    home_suppression_label_pt: str = Field(
+        default="Não mostrar novamente na tela inicial", max_length=240
+    )
+    home_suppression_label_en: str = Field(
+        default="Do not show again on Home", max_length=240
+    )
+    plans_notice_pt: str = Field(
+        default="Esta oferta ainda poderá aparecer em Planos enquanto estiver ativa.",
+        max_length=500,
+    )
+    plans_notice_en: str = Field(
+        default="This offer may still appear in Plans while it is active.", max_length=500
+    )
+
+
+class PromotionCodeImportItem(BaseModel):
+    code: str = Field(min_length=1, max_length=128)
+    redeem_url: str = Field(min_length=1, max_length=1000)
+
+
+class PromotionCodeImportRequest(BaseModel):
+    codes: list[PromotionCodeImportItem] = Field(min_length=1, max_length=10000)
+
+
+class PromotionCodeUpdateRequest(BaseModel):
+    enabled: bool
+
+
 class IAPTrialTelemetryOut(IAPTrialStatusOut):
     user_id: str
     last_requested_at: str | None = None

@@ -474,6 +474,46 @@ final class AppLanguage: ObservableObject {
             .pt: "A compra não pôde ser verificada.",
             .en: "The purchase could not be verified."
         ],
+        "review.extension.title": [
+            .pt: "Seu teste foi estendido",
+            .en: "Your trial was extended"
+        ],
+        "review.extension.message": [
+            .pt: "%d dias extras foram adicionados automaticamente. Seu acesso não depende de publicar uma avaliação.",
+            .en: "%d extra days were added automatically. Your access does not depend on submitting a review."
+        ],
+        "promotion.discount": [
+            .pt: "%.0f%% de desconto",
+            .en: "%.0f%% off"
+        ],
+        "promotion.price_authority": [
+            .pt: "Estimativa na moeda da sua App Store. O preço final aparece na confirmação da Apple.",
+            .en: "Estimated in your App Store currency. Apple shows the final price before confirmation."
+        ],
+        "promotion.valid_until": [
+            .pt: "Válida até %@",
+            .en: "Valid until %@"
+        ],
+        "promotion.code.copied_instruction": [
+            .pt: "O código abaixo será copiado. Cole-o na tela segura da App Store.",
+            .en: "The code below will be copied. Paste it into the secure App Store sheet."
+        ],
+        "promotion.native_sheet_notice": [
+            .pt: "O resgate e a compra são concluídos na tela nativa da App Store.",
+            .en: "Redemption and purchase are completed in the native App Store sheet."
+        ],
+        "promotion.error.redemption": [
+            .pt: "Não foi possível abrir o resgate da App Store: %@",
+            .en: "Could not open App Store redemption: %@"
+        ],
+        "promotion.error.server_confirmation": [
+            .pt: "A compra foi recebida, mas o servidor ainda não confirmou o código. Tente restaurar as compras.",
+            .en: "The purchase was received, but the server has not confirmed the code yet. Try restoring purchases."
+        ],
+        "promotion.error.preference": [
+            .pt: "Não foi possível salvar a preferência desta promoção.",
+            .en: "Could not save this promotion preference."
+        ],
         "empty.search": [.pt: "Busque tickers B3", .en: "Search B3 Tickers"],
         "empty.no_results": [.pt: "Nenhum resultado", .en: "No Results"],
         "empty.no_tracked": [.pt: "Nenhuma empresa acompanhada", .en: "No Tracked Companies"],

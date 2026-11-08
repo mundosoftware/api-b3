@@ -1,6 +1,7 @@
 import Combine
 import Foundation
 import StoreKit
+import UIKit
 
 @MainActor
 final class PurchaseStore: ObservableObject {
@@ -34,15 +35,20 @@ final class PurchaseStore: ObservableObject {
     @Published private(set) var purchasedProductIDs: Set<String> = []
     @Published private(set) var paidAccessExpiresAt: Date?
     @Published private(set) var introOfferEligibleProductIDs: Set<String> = []
+    @Published private(set) var availablePromotion: PromotionOffer?
     @Published private(set) var hasAccess = false
     @Published private(set) var hasResolvedAccess = false
     @Published private(set) var legacyPaidAccess = false
     @Published private(set) var isLoadingProducts = false
     @Published private(set) var isPurchasing = false
     @Published private(set) var isRestoring = false
+    @Published var isPresentingOfferCodeRedemption = false
+    @Published private(set) var shouldRequestNativeReview = false
+    @Published private(set) var trialExtensionDaysGranted = 0
     @Published var message: String?
 
     private var updatesTask: Task<Void, Never>?
+    private var currentUserId: String?
 
     private init() {
         updatesTask = observeTransactionUpdates()
@@ -81,6 +87,7 @@ final class PurchaseStore: ObservableObject {
     func load(userId: String?) async {
         guard !isLoadingProducts else { return }
 
+        currentUserId = userId
         isLoadingProducts = true
         message = nil
 
@@ -95,6 +102,15 @@ final class PurchaseStore: ObservableObject {
         await refreshPurchasedProducts()
         if let userId {
             trialStatus = try? await CompanionAPIClient.shared.iapTrial(userId: userId)
+            if isTrialActive && !hasPaidAccess {
+                await claimAutomaticTrialExtension(userId: userId)
+            }
+            refreshNativeReviewEligibility(userId: userId)
+            if hasPaidAccess {
+                availablePromotion = nil
+            } else {
+                await loadPromotion(userId: userId)
+            }
             updateHasAccess()
         }
         hasResolvedAccess = true
@@ -120,22 +136,44 @@ final class PurchaseStore: ObservableObject {
         message = nil
         defer { isPurchasing = false }
 
+        await recordTelemetry(eventType: "purchase_started", product: product, status: "started")
         do {
-            let result = try await product.purchase()
+            let result: Product.PurchaseResult
+            if let currentUserId, let accountToken = UUID(uuidString: currentUserId) {
+                result = try await product.purchase(options: [.appAccountToken(accountToken)])
+            } else {
+                result = try await product.purchase()
+            }
             switch result {
             case .success(let verification):
                 let transaction = try checkVerified(verification)
+                await recordTelemetry(
+                    eventType: "purchase_succeeded",
+                    product: product,
+                    transaction: transaction,
+                    status: "succeeded"
+                )
                 await transaction.finish()
                 await refreshPurchasedProducts()
+                availablePromotion = nil
             case .pending:
                 message = AppLanguage.shared.text("purchase.pending")
+                await recordTelemetry(eventType: "purchase_pending", product: product, status: "pending")
             case .userCancelled:
+                await recordTelemetry(eventType: "purchase_cancelled", product: product, status: "cancelled")
                 break
             @unknown default:
                 break
             }
         } catch {
             message = String(format: AppLanguage.shared.text("purchase.error.purchase_failed"), error.localizedDescription)
+            await recordTelemetry(
+                eventType: "purchase_failed",
+                product: product,
+                status: "failed",
+                reason: "storekit_error",
+                details: error.localizedDescription
+            )
         }
     }
 
@@ -146,15 +184,88 @@ final class PurchaseStore: ObservableObject {
         message = nil
         defer { isRestoring = false }
 
+        await recordTelemetry(eventType: "restore_started", status: "started")
         do {
             try await AppStore.sync()
             await refreshPurchasedProducts()
-            if !hasAccess {
+            if !hasPaidAccess {
                 message = AppLanguage.shared.text("purchase.restore.none")
+            } else {
+                await recordTelemetry(eventType: "restore_succeeded", status: "succeeded")
             }
         } catch {
             message = String(format: AppLanguage.shared.text("purchase.error.restore_failed"), error.localizedDescription)
+            await recordTelemetry(
+                eventType: "restore_failed",
+                status: "failed",
+                reason: "storekit_error",
+                details: error.localizedDescription
+            )
         }
+    }
+
+    func localizedPromotionPrice(_ promotion: PromotionOffer) -> String {
+        guard let product = products.first(where: { $0.id == promotion.productId }) else {
+            return promotion.promotionalPriceBrl.formatted(
+                .currency(code: "BRL").locale(Locale(identifier: "pt_BR"))
+            )
+        }
+        let multiplier = Decimal(max(0, 1 - promotion.discountPercent / 100))
+        return (product.price * multiplier).formatted(product.priceFormatStyle)
+    }
+
+    func beginPromotionRedemption(_ promotion: PromotionOffer, hideOnHome: Bool) async {
+        guard promotion.id == availablePromotion?.id, currentUserId != nil else { return }
+        UIPasteboard.general.string = promotion.code
+        if hideOnHome && promotion.allowHomeSuppression {
+            await setPromotionHiddenOnHome(promotion, hidden: true)
+        }
+        isPresentingOfferCodeRedemption = true
+    }
+
+    func setPromotionHiddenOnHome(_ promotion: PromotionOffer, hidden: Bool) async {
+        guard promotion.id == availablePromotion?.id,
+              promotion.allowHomeSuppression,
+              let currentUserId else { return }
+        do {
+            try await CompanionAPIClient.shared.updatePromotionHomeVisibility(
+                userId: currentUserId,
+                slug: promotion.slug,
+                hideOnHome: hidden
+            )
+        } catch {
+            message = AppLanguage.shared.text("promotion.error.preference")
+            await recordTelemetry(
+                eventType: "promotion_home_suppression_failed",
+                productId: promotion.productId,
+                status: "failed",
+                reason: "server_error",
+                details: error.localizedDescription
+            )
+        }
+    }
+
+    func handleOfferCodeRedemptionPresentation(_ result: Result<Void, Error>) async {
+        if case .failure(let error) = result {
+            message = String(
+                format: AppLanguage.shared.text("promotion.error.redemption"),
+                error.localizedDescription
+            )
+            await recordTelemetry(
+                eventType: "promotion_redemption_failed",
+                productId: availablePromotion?.productId,
+                status: "failed",
+                reason: "storekit_error",
+                details: error.localizedDescription
+            )
+        }
+    }
+
+    func consumeNativeReviewRequest() {
+        shouldRequestNativeReview = false
+        guard let currentUserId else { return }
+        UserDefaults.standard.set(true, forKey: reviewRequestedKey(userId: currentUserId))
+        UserDefaults.standard.removeObject(forKey: reviewEligibleDateKey(userId: currentUserId))
     }
 
     func isIntroOfferEligible(for product: Product) -> Bool {
@@ -166,6 +277,7 @@ final class PurchaseStore: ObservableObject {
             for await result in Transaction.updates {
                 guard let self else { return }
                 guard case .verified(let transaction) = result else { continue }
+                await self.processOfferCodeTransaction(transaction)
                 await transaction.finish()
                 await self.refreshPurchasedProducts()
             }
@@ -197,6 +309,150 @@ final class PurchaseStore: ObservableObject {
         legacyPaidAccess = hasLegacyAccess
         paidAccessExpiresAt = hasLegacyAccess || hasNonExpiringAccess ? nil : latestSubscriptionExpiration
         updateHasAccess()
+    }
+
+    private func claimAutomaticTrialExtension(userId: String) async {
+        do {
+            let grant = try await CompanionAPIClient.shared.grantTrialEngagementExtension(userId: userId)
+            trialStatus = grant.trial
+            guard grant.granted else { return }
+            trialExtensionDaysGranted = grant.extensionDays
+            UserDefaults.standard.set(
+                Date().addingTimeInterval(24 * 60 * 60),
+                forKey: reviewEligibleDateKey(userId: userId)
+            )
+        } catch {
+            await recordTelemetry(
+                eventType: "trial_extension_failed",
+                productId: ProductID.trialSevenDays,
+                status: "failed",
+                reason: "server_error",
+                details: error.localizedDescription
+            )
+        }
+    }
+
+    private func loadPromotion(userId: String) async {
+        do {
+            let hasPriorPurchase = await hasEverPurchased()
+            let availability = try await CompanionAPIClient.shared.availablePromotion(
+                userId: userId,
+                language: AppLanguage.shared.code.rawValue,
+                hasPriorPurchase: hasPriorPurchase
+            )
+            availablePromotion = availability.available ? availability.promotion : nil
+        } catch {
+            availablePromotion = nil
+            await recordTelemetry(
+                eventType: "promotion_load_failed",
+                status: "failed",
+                reason: "server_error",
+                details: error.localizedDescription
+            )
+        }
+    }
+
+    private func refreshNativeReviewEligibility(userId: String) {
+        guard !UserDefaults.standard.bool(forKey: reviewRequestedKey(userId: userId)) else {
+            shouldRequestNativeReview = false
+            return
+        }
+        guard let eligibleAt = UserDefaults.standard.object(
+            forKey: reviewEligibleDateKey(userId: userId)
+        ) as? Date else {
+            shouldRequestNativeReview = false
+            return
+        }
+        shouldRequestNativeReview = eligibleAt <= Date()
+    }
+
+    private func reviewEligibleDateKey(userId: String) -> String {
+        "tradealert.review.eligible-at.\(userId)"
+    }
+
+    private func reviewRequestedKey(userId: String) -> String {
+        "tradealert.review.requested.\(userId)"
+    }
+
+    private func hasEverPurchased() async -> Bool {
+        for await result in Transaction.all {
+            guard case .verified(let transaction) = result else { continue }
+            guard Self.productIDs.contains(transaction.productID) else { continue }
+            return true
+        }
+        return false
+    }
+
+    private func processOfferCodeTransaction(_ transaction: Transaction) async {
+        guard transaction.offer?.type == .code else { return }
+        guard let promotion = availablePromotion,
+              promotion.productId == transaction.productID,
+              let currentUserId else { return }
+        do {
+            try await CompanionAPIClient.shared.recordPromotionRedemption(
+                userId: currentUserId,
+                slug: promotion.slug,
+                request: PromotionRedemptionRequest(
+                    productId: transaction.productID,
+                    transactionId: String(transaction.id),
+                    originalTransactionId: String(transaction.originalID),
+                    offerId: transaction.offer?.id,
+                    environment: String(describing: transaction.environment)
+                )
+            )
+            availablePromotion = nil
+        } catch {
+            message = AppLanguage.shared.text("promotion.error.server_confirmation")
+            await recordTelemetry(
+                eventType: "promotion_confirmation_failed",
+                productId: transaction.productID,
+                transaction: transaction,
+                status: "failed",
+                reason: "server_error",
+                details: error.localizedDescription
+            )
+        }
+    }
+
+    private func recordTelemetry(
+        eventType: String,
+        product: Product? = nil,
+        productId: String? = nil,
+        transaction: Transaction? = nil,
+        status: String? = nil,
+        reason: String? = nil,
+        details: String? = nil
+    ) async {
+        guard let currentUserId else { return }
+        let device = CompanionDeviceSnapshot.current
+        let request = IAPTelemetryRequest(
+            eventType: eventType,
+            productId: product?.id ?? productId ?? transaction?.productID,
+            productType: product.map { String(describing: $0.type) },
+            transactionId: transaction.map { String($0.id) },
+            originalTransactionId: transaction.map { String($0.originalID) },
+            offerId: transaction?.offer?.id,
+            offerType: transaction?.offer.map { String(describing: $0.type) },
+            storefront: transaction?.storefront.countryCode,
+            currencyCode: nil,
+            displayPrice: product?.displayPrice,
+            price: product.map { NSDecimalNumber(decimal: $0.price).doubleValue },
+            status: status,
+            reason: reason,
+            message: details,
+            platform: "ios",
+            environment: transaction.map { String(describing: $0.environment) }
+                ?? String(describing: AppConfig.environment),
+            appVersion: device.appVersion,
+            deviceModel: device.model,
+            deviceOs: device.systemVersion,
+            language: AppLanguage.shared.code.rawValue,
+            occurredAt: ISO8601DateFormatter().string(from: Date())
+        )
+        try? await CompanionAPIClient.shared.recordIAPTelemetry(
+            userId: currentUserId,
+            request: request
+        )
     }
 
     private func updateHasAccess() {

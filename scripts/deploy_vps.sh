@@ -118,6 +118,7 @@ fi
 ENABLE_REVERSE_PROXY="${ENABLE_REVERSE_PROXY:-auto}"
 DATABASE_PATH="${DATABASE_PATH:-database/app.db}"
 DEFAULT_TIMEZONE="${DEFAULT_TIMEZONE:-America/Sao_Paulo}"
+PROMOTION_CODES_CSV_PATH="${PROMOTION_CODES_CSV_PATH:-Promotions/BLACK_FRIDAY_OfferCodeOneTimeUseCodes_b7536732-6458-4909-92b0-405deb4d10ac.csv}"
 QUOTE_CACHE_TTL_SECONDS="${QUOTE_CACHE_TTL_SECONDS:-60}"
 CHECK_LOOP_SECONDS="${CHECK_LOOP_SECONDS:-30}"
 CHECK_LOOP_ENABLED="${CHECK_LOOP_ENABLED:-true}"
@@ -446,6 +447,15 @@ fi
 : "${ONESIGNAL_WATCH_REST_API_KEY:?ONESIGNAL_WATCH_REST_API_KEY is required for standalone watchOS notifications}"
 : "${ADMIN_TOKEN:?ADMIN_TOKEN is required}"
 
+if [[ "${PROMOTION_CODES_CSV_PATH}" == /* ]]; then
+  echo "PROMOTION_CODES_CSV_PATH must be relative to the project root for deployment sync" >&2
+  exit 1
+fi
+if [[ ! -f "${ROOT_DIR}/${PROMOTION_CODES_CSV_PATH}" ]]; then
+  echo "Promotion codes CSV not found: ${ROOT_DIR}/${PROMOTION_CODES_CSV_PATH}" >&2
+  exit 1
+fi
+
 SERVICE_BIND_HOST="${SERVER_HOST}"
 if reverse_proxy_enabled && [[ "${SERVER_HOST}" == "0.0.0.0" ]]; then
   SERVICE_BIND_HOST="127.0.0.1"
@@ -578,24 +588,23 @@ check_public_universal_notifier() {
 }
 
 verify_remote_ai_outlook_source() {
-  echo "Verifying deployed AI Outlook route source"
-  if remote "grep -q 'features/ai-outlook' '${APP_DIR}/src/application.py' && grep -q 'admin/features/ai-outlook' '${APP_DIR}/src/application.py'"; then
+  echo "Verifying deployed feature route source"
+  if remote "grep -q 'features/ai-outlook' '${APP_DIR}/src/application.py' && grep -q 'admin/features/ai-outlook' '${APP_DIR}/src/application.py' && grep -q 'admin/promotions' '${APP_DIR}/src/application.py'"; then
     return 0
   fi
 
-  echo "The deployed source at ${APP_DIR} does not contain the AI Outlook feature routes." >&2
-  echo "This would make /features/ai-outlook and /admin/features/ai-outlook return 404 even when /health works." >&2
+  echo "The deployed source at ${APP_DIR} does not contain the required AI Outlook and promotions routes." >&2
   print_remote_diagnostics
   return 1
 }
 
 check_internal_ai_outlook_routes() {
-  echo "Checking AI Outlook feature routes inside VPS"
-  if remote "curl -fsS --max-time 5 'http://127.0.0.1:${SERVER_PORT}/features/ai-outlook' >/dev/null && curl -fsS --max-time 5 --header 'X-Admin-Token: ${ADMIN_TOKEN}' 'http://127.0.0.1:${SERVER_PORT}/admin/features/ai-outlook' >/dev/null"; then
+  echo "Checking feature routes inside VPS"
+  if remote "curl -fsS --max-time 5 'http://127.0.0.1:${SERVER_PORT}/features/ai-outlook' >/dev/null && curl -fsS --max-time 5 --header 'X-Admin-Token: ${ADMIN_TOKEN}' 'http://127.0.0.1:${SERVER_PORT}/admin/features/ai-outlook' >/dev/null && curl -fsS --max-time 5 --header 'X-Admin-Token: ${ADMIN_TOKEN}' 'http://127.0.0.1:${SERVER_PORT}/admin/promotions/api' >/dev/null"; then
     return 0
   fi
 
-  echo "The API is healthy, but AI Outlook feature routes are not reachable inside the VPS." >&2
+  echo "The API is healthy, but required feature routes are not reachable inside the VPS." >&2
   echo "If these endpoints return 404, systemd is likely running stale code or a different WorkingDirectory." >&2
   print_remote_diagnostics
   return 1
@@ -995,6 +1004,7 @@ CLEANUP_FILES+=("${TMP_ENV}")
   write_env_line "SERVER_HOST" "${SERVICE_BIND_HOST}"
   write_env_line "SERVER_PORT" "${SERVER_PORT}"
   write_env_line "DEFAULT_TIMEZONE" "${DEFAULT_TIMEZONE}"
+  write_env_line "PROMOTION_CODES_CSV_PATH" "${PROMOTION_CODES_CSV_PATH}"
   write_env_line "AI_OUTLOOK_GLOBAL_ENABLED" "${AI_OUTLOOK_GLOBAL_ENABLED}"
   write_env_line "AI_OUTLOOK_WORKER_ENABLED" "${AI_OUTLOOK_WORKER_ENABLED}"
   write_env_line "AI_OUTLOOK_WORKER_POLL_SECONDS" "${AI_OUTLOOK_WORKER_POLL_SECONDS}"

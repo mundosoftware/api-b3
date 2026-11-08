@@ -190,6 +190,12 @@ sudo bash scripts/deploy_vps.sh vps local.env --reset-notifier
 
 Trade Alert exposes `/readyz` with the notifier state, and nginx proxies `/v1/events` through the public VPS origin, so Postman can use the same host as `API_BASE` for `UNIVERSAL_NOTIFIER_BASE`. The Node service remains bound to VPS loopback and port 8787 is not exposed directly.
 
+### Promotions panel and StoreKit offer codes
+
+The backend imports Apple one-time offer codes from `PROMOTION_CODES_CSV_PATH` into SQLite and exposes a reusable panel at `/admin/promotions`. Campaign and code APIs require the existing `X-Admin-Token`. The iOS app shows eligible promotions on Home and/or Plans, copies the reserved code, and opens StoreKit's native offer-code redemption sheet. Code CSV files are intentionally ignored by Git and must be present in the secure deployment workspace.
+
+The active Black Friday defaults use `lifetime_unlock`, R$ 29.90 in Brazil, and expire at the end of December 31, 2026. Regional display values are estimated from the StoreKit storefront price and campaign discount; Apple's confirmation sheet is the final price authority. See [Promotions and native StoreKit redemption](docs/promotions.md) for setup, behavior, and production-hardening notes.
+
 When `KRONOS_INSTALL=true`, the deploy script also installs `requirements-ai.txt`, clones or updates Kronos at `${APP_DIR}/.deps/Kronos`, creates Hugging Face/Torch cache directories under `${APP_DIR}/.cache/kronos` by default, and writes the AI Outlook/Kronos env vars into the remote `local.env`. The initial `AI_OUTLOOK_GLOBAL_ENABLED` value seeds the database; later admin changes are persisted through `/admin/features/ai-outlook`.
 
 For Oracle Cloud, keep the Python API private on `SERVER_PORT=8000`, expose nginx on `HTTP_SERVER_PORT=80` for certificate validation, and expose HTTPS on `HTTPS_SERVER_PORT=443`. With that setup, the public API URL is `https://<VPS_HOST>` and the health URL is `https://<VPS_HOST>/health`; do not use `:8000` unless Oracle ingress also allows port 8000.

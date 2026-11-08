@@ -13,6 +13,10 @@ from src.models import (
     AlertRuleUpdateRequest,
     IAPTelemetryEventCreateRequest,
     NotificationPreferencesUpdateRequest,
+    PromotionAdminCreateRequest,
+    PromotionAdminUpdateRequest,
+    PromotionCodeImportRequest,
+    PromotionRedemptionRequest,
 )
 
 
@@ -340,6 +344,498 @@ class Repository:
         response = self.get_iap_trial(user_id, requested_at)
         response["message"] = message
         return response
+
+    def grant_engagement_trial_extension(
+        self,
+        user_id: str,
+        days: int = 7,
+        now: datetime | None = None,
+    ) -> dict[str, Any]:
+        """Grant the one-time trial engagement bonus independently of review outcome."""
+        checked_at = self._coerce_utc(now or datetime.now(UTC)).replace(microsecond=0)
+        self.upsert_user(user_id)
+        granted = False
+        reason = "already_granted"
+
+        with self.database.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute("SELECT * FROM iap_trials WHERE user_id = ?", (user_id,)).fetchone()
+            if row is None:
+                trial_response = self._trial_response(None, checked_at)
+                reason = "trial_not_active"
+            else:
+                trial = self._normalize_iap_trial_status(db, dict(row), checked_at)
+                prior = db.execute(
+                    "SELECT 1 FROM trial_engagement_extensions WHERE user_id = ?",
+                    (user_id,),
+                ).fetchone()
+                if trial["status"] != "active":
+                    reason = "trial_not_active"
+                elif prior is not None:
+                    reason = "already_granted"
+                else:
+                    ends_at = parse_iso(trial["ends_at"])
+                    if ends_at is None:
+                        reason = "trial_not_active"
+                    else:
+                        new_ends_at = self._coerce_utc(ends_at) + timedelta(days=days)
+                        db.execute(
+                            """
+                            INSERT INTO trial_engagement_extensions(user_id, extension_days, granted_at)
+                            VALUES (?, ?, ?)
+                            """,
+                            (user_id, days, checked_at.isoformat()),
+                        )
+                        db.execute(
+                            """
+                            UPDATE iap_trials
+                            SET ends_at = ?, updated_at = ?
+                            WHERE user_id = ?
+                            """,
+                            (new_ends_at.isoformat(), checked_at.isoformat(), user_id),
+                        )
+                        trial["ends_at"] = new_ends_at.isoformat()
+                        trial["updated_at"] = checked_at.isoformat()
+                        granted = True
+                        reason = "granted"
+                trial_response = self._trial_response(trial, checked_at)
+
+        if granted:
+            self.record_iap_telemetry_event(
+                user_id,
+                IAPTelemetryEventCreateRequest(
+                    event_type="trial_period_extended",
+                    product_id=IAP_TRIAL_PRODUCT_ID,
+                    product_type="server_trial",
+                    trial_days=days,
+                    status="active",
+                    reason="engagement_bonus",
+                    message="A one-time trial engagement extension was granted automatically.",
+                    platform="ios",
+                    occurred_at=checked_at.isoformat(),
+                ),
+            )
+
+        return {
+            "granted": granted,
+            "reason": reason,
+            "extension_days": days if granted else 0,
+            "trial": trial_response,
+        }
+
+    def promotion_availability(
+        self,
+        user_id: str,
+        language: str = "pt",
+        client_has_prior_purchase: bool = False,
+        now: datetime | None = None,
+    ) -> dict[str, Any]:
+        checked_at = self._coerce_utc(now or datetime.now(UTC)).replace(microsecond=0)
+        self.upsert_user(user_id)
+        language = "pt" if language.lower().startswith("pt") else "en"
+
+        if client_has_prior_purchase or self.user_has_prior_purchase(user_id):
+            return {"available": False, "reason": "prior_purchase", "promotion": None}
+
+        with self.database.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            promotions = db.execute(
+                "SELECT * FROM promotions WHERE enabled = 1 ORDER BY starts_at, id"
+            ).fetchall()
+            promotion = next(
+                (
+                    dict(row)
+                    for row in promotions
+                    if self._promotion_is_active(dict(row), checked_at)
+                ),
+                None,
+            )
+            if promotion is None:
+                return {"available": False, "reason": "no_active_promotion", "promotion": None}
+
+            code_row = db.execute(
+                """
+                SELECT * FROM promotion_codes
+                WHERE promotion_id = ? AND enabled = 1 AND status = 'reserved'
+                  AND reserved_by_user_id = ?
+                ORDER BY id LIMIT 1
+                """,
+                (promotion["id"], user_id),
+            ).fetchone()
+            if code_row is None:
+                code_row = db.execute(
+                    """
+                    SELECT * FROM promotion_codes
+                    WHERE promotion_id = ? AND enabled = 1 AND status = 'available'
+                    ORDER BY id LIMIT 1
+                    """,
+                    (promotion["id"],),
+                ).fetchone()
+                if code_row is None:
+                    return {"available": False, "reason": "no_codes", "promotion": None}
+                db.execute(
+                    """
+                    UPDATE promotion_codes
+                    SET status = 'reserved', reserved_by_user_id = ?, reserved_at = ?, updated_at = ?
+                    WHERE id = ? AND status = 'available'
+                    """,
+                    (user_id, checked_at.isoformat(), checked_at.isoformat(), code_row["id"]),
+                )
+                code_row = db.execute(
+                    "SELECT * FROM promotion_codes WHERE id = ?",
+                    (code_row["id"],),
+                ).fetchone()
+
+            state = db.execute(
+                """
+                SELECT hide_on_home FROM promotion_user_state
+                WHERE promotion_id = ? AND user_id = ?
+                """,
+                (promotion["id"], user_id),
+            ).fetchone()
+            hidden_on_home = bool(state["hide_on_home"]) if state else False
+            suffix = "pt" if language == "pt" else "en"
+            return {
+                "available": True,
+                "reason": "available",
+                "promotion": {
+                    "id": promotion["id"],
+                    "slug": promotion["slug"],
+                    "name": promotion["name"],
+                    "product_id": promotion["product_id"],
+                    "code": code_row["code"],
+                    "redeem_url": code_row["redeem_url"],
+                    "promotional_price_brl": promotion["promotional_price_brl"],
+                    "discount_percent": promotion["discount_percent"],
+                    "starts_at": promotion["starts_at"],
+                    "ends_at": promotion["ends_at"],
+                    "show_on_home": bool(promotion["show_on_home"]) and not hidden_on_home,
+                    "allow_home_suppression": bool(promotion["allow_home_suppression"]),
+                    "show_on_paywall": bool(promotion["show_on_paywall"]),
+                    "text": {
+                        "title": promotion[f"title_{suffix}"],
+                        "body": promotion[f"body_{suffix}"],
+                        "cta_label": promotion[f"cta_{suffix}"],
+                        "home_suppression_label": promotion[
+                            f"home_suppression_label_{suffix}"
+                        ],
+                        "plans_notice": promotion[f"plans_notice_{suffix}"],
+                    },
+                },
+            }
+
+    def user_has_prior_purchase(self, user_id: str) -> bool:
+        with self.database.connect() as db:
+            row = db.execute(
+                """
+                SELECT 1 FROM iap_telemetry_events
+                WHERE user_id = ? AND event_type IN (
+                    'purchase_succeeded', 'subscription_started', 'subscription_renewed',
+                    'restore_succeeded', 'promotion_redeemed'
+                )
+                LIMIT 1
+                """,
+                (user_id,),
+            ).fetchone()
+            return row is not None
+
+    def dismiss_promotion_on_home(self, user_id: str, slug: str, hidden: bool) -> None:
+        self.upsert_user(user_id)
+        now = utc_now_iso()
+        with self.database.connect() as db:
+            promotion = db.execute(
+                "SELECT id, allow_home_suppression FROM promotions WHERE slug = ?", (slug,)
+            ).fetchone()
+            if promotion is None:
+                raise ValueError("promotion not found")
+            if hidden and not bool(promotion["allow_home_suppression"]):
+                raise ValueError("home suppression is disabled for this promotion")
+            db.execute(
+                """
+                INSERT INTO promotion_user_state(promotion_id, user_id, hide_on_home, updated_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(promotion_id, user_id) DO UPDATE SET
+                    hide_on_home = excluded.hide_on_home,
+                    updated_at = excluded.updated_at
+                """,
+                (promotion["id"], user_id, int(hidden), now),
+            )
+
+    def record_promotion_redemption(
+        self,
+        user_id: str,
+        slug: str,
+        request: PromotionRedemptionRequest,
+    ) -> dict[str, Any]:
+        self.upsert_user(user_id)
+        now = utc_now_iso()
+        redeemed_at = now
+        newly_recorded = False
+        with self.database.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            promotion = db.execute(
+                "SELECT * FROM promotions WHERE slug = ?", (slug,)
+            ).fetchone()
+            if promotion is None:
+                raise ValueError("promotion not found")
+            if request.product_id != promotion["product_id"]:
+                raise ValueError("transaction product does not match promotion")
+
+            existing = db.execute(
+                "SELECT * FROM promotion_codes WHERE transaction_id = ?",
+                (request.transaction_id,),
+            ).fetchone()
+            if existing is not None:
+                if (
+                    existing["promotion_id"] != promotion["id"]
+                    or existing["redeemed_by_user_id"] != user_id
+                ):
+                    raise ValueError("transaction is already linked to another redemption")
+                redeemed_at = existing["redeemed_at"] or now
+            else:
+                code = db.execute(
+                    """
+                    SELECT * FROM promotion_codes
+                    WHERE promotion_id = ? AND reserved_by_user_id = ? AND status = 'reserved'
+                    ORDER BY id LIMIT 1
+                    """,
+                    (promotion["id"], user_id),
+                ).fetchone()
+                if code is None:
+                    raise ValueError("no reserved promotion code for user")
+                db.execute(
+                    """
+                    UPDATE promotion_codes
+                    SET status = 'redeemed', redeemed_by_user_id = ?, redeemed_at = ?,
+                        transaction_id = ?, original_transaction_id = ?, offer_id = ?,
+                        environment = ?, updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        user_id,
+                        now,
+                        request.transaction_id,
+                        request.original_transaction_id,
+                        request.offer_id,
+                        request.environment,
+                        now,
+                        code["id"],
+                    ),
+                )
+                newly_recorded = True
+
+        if newly_recorded:
+            self.record_iap_telemetry_event(
+                user_id,
+                IAPTelemetryEventCreateRequest(
+                    event_type="promotion_redeemed",
+                    product_id=request.product_id,
+                    product_type="non_consumable",
+                    transaction_id=request.transaction_id,
+                    original_transaction_id=request.original_transaction_id,
+                    offer_id=request.offer_id,
+                    offer_type="code",
+                    status="succeeded",
+                    platform="ios",
+                    environment=request.environment,
+                    occurred_at=now,
+                ),
+            )
+        return {
+            "recorded": True,
+            "promotion_slug": slug,
+            "user_id": user_id,
+            "product_id": request.product_id,
+            "transaction_id": request.transaction_id,
+            "redeemed_at": redeemed_at,
+        }
+
+    def list_promotions_for_admin(self) -> list[dict[str, Any]]:
+        with self.database.connect() as db:
+            rows = db.execute(
+                """
+                SELECT p.*,
+                    COUNT(c.id) AS code_count,
+                    SUM(CASE WHEN c.enabled = 1 AND c.status = 'available' THEN 1 ELSE 0 END)
+                        AS available_code_count,
+                    SUM(CASE WHEN c.status = 'reserved' THEN 1 ELSE 0 END) AS reserved_code_count,
+                    SUM(CASE WHEN c.status = 'redeemed' THEN 1 ELSE 0 END) AS redeemed_code_count
+                FROM promotions p
+                LEFT JOIN promotion_codes c ON c.promotion_id = p.id
+                GROUP BY p.id
+                ORDER BY p.created_at DESC, p.id DESC
+                """
+            ).fetchall()
+            return [self._promotion_admin_row(dict(row)) for row in rows]
+
+    def create_promotion_for_admin(
+        self, request: PromotionAdminCreateRequest
+    ) -> dict[str, Any]:
+        payload = request.model_dump()
+        starts_at = self._coerce_utc(parse_iso(payload["starts_at"]))
+        ends_at = self._coerce_utc(parse_iso(payload["ends_at"]))
+        if starts_at >= ends_at:
+            raise ValueError("promotion end must be after its start")
+        for key in ("enabled", "show_on_home", "allow_home_suppression", "show_on_paywall"):
+            payload[key] = int(payload[key])
+        now = utc_now_iso()
+        payload["created_at"] = now
+        payload["updated_at"] = now
+        columns = ", ".join(payload)
+        placeholders = ", ".join("?" for _ in payload)
+        with self.database.connect() as db:
+            try:
+                cursor = db.execute(
+                    f"INSERT INTO promotions({columns}) VALUES ({placeholders})",
+                    tuple(payload.values()),
+                )
+            except sqlite3.IntegrityError as exc:
+                raise ValueError("promotion slug already exists") from exc
+            promotion_id = cursor.lastrowid
+        return next(
+            row for row in self.list_promotions_for_admin() if row["id"] == promotion_id
+        )
+
+    def import_promotion_codes_for_admin(
+        self, promotion_id: int, request: PromotionCodeImportRequest
+    ) -> dict[str, int]:
+        now = utc_now_iso()
+        imported = 0
+        updated = 0
+        with self.database.connect() as db:
+            if db.execute("SELECT 1 FROM promotions WHERE id = ?", (promotion_id,)).fetchone() is None:
+                raise ValueError("promotion not found")
+            db.execute("BEGIN IMMEDIATE")
+            for item in request.codes:
+                existing = db.execute(
+                    "SELECT promotion_id FROM promotion_codes WHERE code = ?", (item.code,)
+                ).fetchone()
+                if existing is not None and existing["promotion_id"] != promotion_id:
+                    raise ValueError(f"code {item.code} already belongs to another promotion")
+                if existing is None:
+                    db.execute(
+                        """
+                        INSERT INTO promotion_codes(
+                            promotion_id, code, redeem_url, created_at, updated_at
+                        ) VALUES (?, ?, ?, ?, ?)
+                        """,
+                        (promotion_id, item.code, item.redeem_url, now, now),
+                    )
+                    imported += 1
+                else:
+                    db.execute(
+                        """
+                        UPDATE promotion_codes SET redeem_url = ?, updated_at = ?
+                        WHERE promotion_id = ? AND code = ?
+                        """,
+                        (item.redeem_url, now, promotion_id, item.code),
+                    )
+                    updated += 1
+        return {"imported": imported, "updated": updated}
+
+    def list_promotion_codes_for_admin(
+        self, promotion_id: int, limit: int = 200, status: str | None = None
+    ) -> list[dict[str, Any]]:
+        limit = max(1, min(limit, 2000))
+        conditions = ["promotion_id = ?"]
+        params: list[Any] = [promotion_id]
+        if status:
+            conditions.append("status = ?")
+            params.append(status)
+        with self.database.connect() as db:
+            rows = db.execute(
+                f"""
+                SELECT * FROM promotion_codes
+                WHERE {' AND '.join(conditions)}
+                ORDER BY id
+                LIMIT ?
+                """,
+                (*params, limit),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    def update_promotion_for_admin(
+        self, promotion_id: int, request: PromotionAdminUpdateRequest
+    ) -> dict[str, Any]:
+        payload = request.model_dump(exclude_none=True)
+        if not payload:
+            promotions = self.list_promotions_for_admin()
+            return next(row for row in promotions if row["id"] == promotion_id)
+        allowed = {
+            "name", "enabled", "product_id", "promotional_price_brl", "discount_percent",
+            "starts_at", "ends_at", "show_on_home", "allow_home_suppression",
+            "show_on_paywall", "title_pt", "title_en", "body_pt", "body_en", "cta_pt",
+            "cta_en", "home_suppression_label_pt", "home_suppression_label_en",
+            "plans_notice_pt", "plans_notice_en",
+        }
+        unknown = set(payload) - allowed
+        if unknown:
+            raise ValueError("unsupported promotion fields")
+        for key in ("enabled", "show_on_home", "allow_home_suppression", "show_on_paywall"):
+            if key in payload:
+                payload[key] = int(payload[key])
+        payload["updated_at"] = utc_now_iso()
+        assignments = ", ".join(f"{key} = ?" for key in payload)
+        with self.database.connect() as db:
+            current = db.execute(
+                "SELECT starts_at, ends_at FROM promotions WHERE id = ?", (promotion_id,)
+            ).fetchone()
+            if current is None:
+                raise ValueError("promotion not found")
+            starts_at = self._coerce_utc(
+                parse_iso(payload.get("starts_at", current["starts_at"]))
+            )
+            ends_at = self._coerce_utc(
+                parse_iso(payload.get("ends_at", current["ends_at"]))
+            )
+            if starts_at >= ends_at:
+                raise ValueError("promotion end must be after its start")
+            result = db.execute(
+                f"UPDATE promotions SET {assignments} WHERE id = ?",
+                (*payload.values(), promotion_id),
+            )
+            if result.rowcount == 0:
+                raise ValueError("promotion not found")
+        return next(
+            row for row in self.list_promotions_for_admin() if row["id"] == promotion_id
+        )
+
+    def update_promotion_code_for_admin(
+        self, promotion_id: int, code_id: int, enabled: bool
+    ) -> dict[str, Any]:
+        now = utc_now_iso()
+        with self.database.connect() as db:
+            result = db.execute(
+                """
+                UPDATE promotion_codes SET enabled = ?, updated_at = ?
+                WHERE id = ? AND promotion_id = ?
+                """,
+                (int(enabled), now, code_id, promotion_id),
+            )
+            if result.rowcount == 0:
+                raise ValueError("promotion code not found")
+            row = db.execute("SELECT * FROM promotion_codes WHERE id = ?", (code_id,)).fetchone()
+            return dict(row)
+
+    @staticmethod
+    def _promotion_is_active(promotion: dict[str, Any], checked_at: datetime) -> bool:
+        starts_at = parse_iso(promotion["starts_at"])
+        ends_at = parse_iso(promotion["ends_at"])
+        if starts_at and starts_at.tzinfo is None:
+            starts_at = starts_at.replace(tzinfo=UTC)
+        if ends_at and ends_at.tzinfo is None:
+            ends_at = ends_at.replace(tzinfo=UTC)
+        return bool(starts_at and ends_at and starts_at <= checked_at < ends_at)
+
+    @staticmethod
+    def _promotion_admin_row(promotion: dict[str, Any]) -> dict[str, Any]:
+        for key in ("enabled", "show_on_home", "allow_home_suppression", "show_on_paywall"):
+            promotion[key] = bool(promotion[key])
+        for key in (
+            "code_count", "available_code_count", "reserved_code_count", "redeemed_code_count"
+        ):
+            promotion[key] = int(promotion[key] or 0)
+        return promotion
 
     def list_iap_trials(
         self,

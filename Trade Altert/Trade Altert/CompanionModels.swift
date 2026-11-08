@@ -509,3 +509,141 @@ struct IAPTrialStatus: Decodable {
         message = try container.decodeIfPresent(String.self, forKey: .message)
     }
 }
+
+struct TrialExtensionGrant: Decodable {
+    let granted: Bool
+    let reason: String
+    let extensionDays: Int
+    let trial: IAPTrialStatus
+
+    enum CodingKeys: String, CodingKey {
+        case granted, reason, trial
+        case extensionDays = "extension_days"
+    }
+}
+
+struct PromotionText: Decodable {
+    let title: String
+    let body: String
+    let ctaLabel: String
+    let homeSuppressionLabel: String
+    let plansNotice: String
+
+    enum CodingKeys: String, CodingKey {
+        case title, body
+        case ctaLabel = "cta_label"
+        case homeSuppressionLabel = "home_suppression_label"
+        case plansNotice = "plans_notice"
+    }
+}
+
+struct PromotionOffer: Decodable, Identifiable {
+    let id: Int
+    let slug: String
+    let name: String
+    let productId: String
+    let code: String
+    let redeemUrl: String
+    let promotionalPriceBrl: Double
+    let discountPercent: Double
+    let startsAt: String
+    let endsAt: String
+    let showOnHome: Bool
+    let allowHomeSuppression: Bool
+    let showOnPaywall: Bool
+    let text: PromotionText
+
+    enum CodingKeys: String, CodingKey {
+        case id, slug, name, code, text
+        case productId = "product_id"
+        case redeemUrl = "redeem_url"
+        case promotionalPriceBrl = "promotional_price_brl"
+        case discountPercent = "discount_percent"
+        case startsAt = "starts_at"
+        case endsAt = "ends_at"
+        case showOnHome = "show_on_home"
+        case allowHomeSuppression = "allow_home_suppression"
+        case showOnPaywall = "show_on_paywall"
+    }
+}
+
+struct PromotionAvailability: Decodable {
+    let available: Bool
+    let reason: String
+    let promotion: PromotionOffer?
+}
+
+struct PromotionDismissRequest: Encodable {
+    let hideOnHome: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case hideOnHome = "hide_on_home"
+    }
+}
+
+struct PromotionRedemptionRequest: Encodable {
+    let productId: String
+    let transactionId: String
+    let originalTransactionId: String?
+    let offerId: String?
+    let environment: String?
+
+    enum CodingKeys: String, CodingKey {
+        case productId = "product_id"
+        case transactionId = "transaction_id"
+        case originalTransactionId = "original_transaction_id"
+        case offerId = "offer_id"
+        case environment
+    }
+}
+
+struct PromotionRedemptionResponse: Decodable {
+    let recorded: Bool
+}
+
+struct IAPTelemetryRequest: Encodable {
+    let eventType: String
+    let productId: String?
+    let productType: String?
+    let transactionId: String?
+    let originalTransactionId: String?
+    let offerId: String?
+    let offerType: String?
+    let storefront: String?
+    let currencyCode: String?
+    let displayPrice: String?
+    let price: Double?
+    let status: String?
+    let reason: String?
+    let message: String?
+    let platform: String
+    let environment: String?
+    let appVersion: String?
+    let deviceModel: String?
+    let deviceOs: String?
+    let language: String
+    let occurredAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case eventType = "event_type"
+        case productId = "product_id"
+        case productType = "product_type"
+        case transactionId = "transaction_id"
+        case originalTransactionId = "original_transaction_id"
+        case offerId = "offer_id"
+        case offerType = "offer_type"
+        case storefront
+        case currencyCode = "currency_code"
+        case displayPrice = "display_price"
+        case price, status, reason, message, platform, environment
+        case appVersion = "app_version"
+        case deviceModel = "device_model"
+        case deviceOs = "device_os"
+        case language
+        case occurredAt = "occurred_at"
+    }
+}
+
+struct IAPTelemetryResponse: Decodable {
+    let id: Int
+}

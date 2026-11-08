@@ -67,6 +67,11 @@ struct PaywallView: View {
                 header
                 features
 
+                if let promotion = purchases.availablePromotion,
+                   promotion.showOnPaywall {
+                    PromotionPaywallCard(promotion: promotion)
+                }
+
                 plans
 
                 if let message = purchases.message {
@@ -486,6 +491,58 @@ struct PaywallView: View {
         default:
             return ""
         }
+    }
+}
+
+private struct PromotionPaywallCard: View {
+    @EnvironmentObject private var purchases: PurchaseStore
+    @EnvironmentObject private var language: AppLanguage
+    let promotion: PromotionOffer
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label(promotion.text.title, systemImage: "tag.fill")
+                .font(.title2.bold())
+                .foregroundStyle(.orange)
+            Text(promotion.text.body)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(String(format: language.text("promotion.valid_until"), promotion.localizedEndDate))
+                .font(.subheadline.bold())
+            HStack(alignment: .firstTextBaseline) {
+                Text(purchases.localizedPromotionPrice(promotion))
+                    .font(.title.bold())
+                Text(String(format: language.text("promotion.discount"), promotion.discountPercent))
+                    .font(.subheadline.bold())
+                    .foregroundStyle(.green)
+            }
+            Text(promotion.text.plansNotice)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Button {
+                Task {
+                    await purchases.beginPromotionRedemption(promotion, hideOnHome: false)
+                }
+            } label: {
+                Label(promotion.text.ctaLabel, systemImage: "apple.logo")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .tint(.orange)
+            Text(language.text("promotion.native_sheet_notice"))
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .padding(18)
+        .background(
+            LinearGradient(
+                colors: [Color.orange.opacity(0.17), Color(.secondarySystemGroupedBackground)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            ),
+            in: RoundedRectangle(cornerRadius: 18)
+        )
+        .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.orange.opacity(0.45)))
     }
 }
 

@@ -44,6 +44,9 @@ class Settings(BaseModel):
     universal_notifier_http_token: str | None = None
     universal_notifier_timeout_seconds: float = 3.0
     admin_token: str | None = None
+    promotion_codes_csv_path: str = (
+        "Promotions/BLACK_FRIDAY_OfferCodeOneTimeUseCodes_b7536732-6458-4909-92b0-405deb4d10ac.csv"
+    )
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -152,6 +155,10 @@ class Settings(BaseModel):
                 )
             ),
             admin_token=os.getenv("ADMIN_TOKEN") or None,
+            promotion_codes_csv_path=os.getenv(
+                "PROMOTION_CODES_CSV_PATH",
+                cls.model_fields["promotion_codes_csv_path"].default,
+            ),
         )
 
     @property

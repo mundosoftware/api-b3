@@ -1,4 +1,5 @@
 import sqlite3
+import csv
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
@@ -368,6 +369,72 @@ def init_db(settings: Settings | None = None) -> None:
 
             CREATE INDEX IF NOT EXISTS idx_iap_trials_status
                 ON iap_trials(status, next_available_at);
+
+            CREATE TABLE IF NOT EXISTS trial_engagement_extensions (
+                user_id TEXT PRIMARY KEY REFERENCES users(user_id) ON DELETE CASCADE,
+                extension_days INTEGER NOT NULL,
+                granted_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS promotions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                slug TEXT NOT NULL UNIQUE,
+                name TEXT NOT NULL,
+                enabled INTEGER NOT NULL DEFAULT 0,
+                product_id TEXT NOT NULL,
+                promotional_price_brl REAL NOT NULL,
+                discount_percent REAL NOT NULL,
+                starts_at TEXT NOT NULL,
+                ends_at TEXT NOT NULL,
+                show_on_home INTEGER NOT NULL DEFAULT 1,
+                allow_home_suppression INTEGER NOT NULL DEFAULT 1,
+                show_on_paywall INTEGER NOT NULL DEFAULT 1,
+                title_pt TEXT NOT NULL,
+                title_en TEXT NOT NULL,
+                body_pt TEXT NOT NULL,
+                body_en TEXT NOT NULL,
+                cta_pt TEXT NOT NULL,
+                cta_en TEXT NOT NULL,
+                home_suppression_label_pt TEXT NOT NULL,
+                home_suppression_label_en TEXT NOT NULL,
+                plans_notice_pt TEXT NOT NULL,
+                plans_notice_en TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS promotion_codes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                promotion_id INTEGER NOT NULL REFERENCES promotions(id) ON DELETE CASCADE,
+                code TEXT NOT NULL UNIQUE,
+                redeem_url TEXT NOT NULL,
+                enabled INTEGER NOT NULL DEFAULT 1,
+                status TEXT NOT NULL DEFAULT 'available'
+                    CHECK(status IN ('available', 'reserved', 'redeemed')),
+                reserved_by_user_id TEXT REFERENCES users(user_id) ON DELETE SET NULL,
+                reserved_at TEXT,
+                redeemed_by_user_id TEXT REFERENCES users(user_id) ON DELETE SET NULL,
+                redeemed_at TEXT,
+                transaction_id TEXT UNIQUE,
+                original_transaction_id TEXT,
+                offer_id TEXT,
+                environment TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_promotion_codes_availability
+                ON promotion_codes(promotion_id, enabled, status, id);
+            CREATE INDEX IF NOT EXISTS idx_promotion_codes_user
+                ON promotion_codes(promotion_id, reserved_by_user_id, redeemed_by_user_id);
+
+            CREATE TABLE IF NOT EXISTS promotion_user_state (
+                promotion_id INTEGER NOT NULL REFERENCES promotions(id) ON DELETE CASCADE,
+                user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+                hide_on_home INTEGER NOT NULL DEFAULT 0,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY(promotion_id, user_id)
+            );
             """
         )
         _ensure_ai_outlook_jobs_status_allows_canceled(db)
@@ -391,6 +458,58 @@ def init_db(settings: Settings | None = None) -> None:
             "INTEGER NOT NULL DEFAULT 0",
         )
         now = utc_now_iso()
+        db.execute(
+            """
+            INSERT INTO promotions(
+                slug, name, enabled, product_id, promotional_price_brl, discount_percent,
+                starts_at, ends_at, show_on_home, allow_home_suppression, show_on_paywall,
+                title_pt, title_en, body_pt, body_en, cta_pt, cta_en,
+                home_suppression_label_pt, home_suppression_label_en,
+                plans_notice_pt, plans_notice_en, created_at, updated_at
+            ) VALUES (
+                'black-friday-2026', 'Black Friday 2026', 1, 'lifetime_unlock', 29.90, 40.08016032064128,
+                '2026-11-01T00:00:00+00:00', '2027-01-01T02:59:59+00:00', 1, 1, 1,
+                'Black Friday: acesso vitalício', 'Black Friday: lifetime access',
+                'Garanta o acesso vitalício com 40% de desconto. A App Store confirma o preço final na sua região.',
+                'Get lifetime access with 40% off. The App Store confirms the final price in your region.',
+                'Resgatar oferta', 'Redeem offer',
+                'Não mostrar novamente na tela inicial', 'Do not show again on Home',
+                'Esta oferta ainda poderá aparecer em Planos enquanto estiver ativa.',
+                'This offer may still appear in Plans while it is active.',
+                ?, ?
+            )
+            ON CONFLICT(slug) DO NOTHING
+            """,
+            (now, now),
+        )
+        promotion_id = db.execute(
+            "SELECT id FROM promotions WHERE slug = 'black-friday-2026'"
+        ).fetchone()["id"]
+
+        csv_path = Path(settings.promotion_codes_csv_path)
+        if csv_path.is_file():
+            with csv_path.open(newline="", encoding="utf-8-sig") as handle:
+                for row in csv.reader(handle):
+                    if not row or not row[0].strip():
+                        continue
+                    code = row[0].strip()
+                    redeem_url = (
+                        row[1].strip()
+                        if len(row) > 1 and row[1].strip()
+                        else f"https://apps.apple.com/redeem?ctx=offercodes&code={code}"
+                    )
+                    db.execute(
+                        """
+                        INSERT INTO promotion_codes(
+                            promotion_id, code, redeem_url, created_at, updated_at
+                        ) VALUES (?, ?, ?, ?, ?)
+                        ON CONFLICT(code) DO UPDATE SET
+                            redeem_url = excluded.redeem_url,
+                            updated_at = excluded.updated_at
+                        WHERE promotion_codes.promotion_id = excluded.promotion_id
+                        """,
+                        (promotion_id, code, redeem_url, now, now),
+                    )
         db.execute(
             """
             INSERT INTO feature_flags(name, enabled, updated_at, updated_by)

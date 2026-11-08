@@ -50,6 +50,59 @@ actor CompanionAPIClient {
         try await send("/users/\(userId)/iap/trial", method: "POST", body: EmptyBody())
     }
 
+    func grantTrialEngagementExtension(userId: String) async throws -> TrialExtensionGrant {
+        try await send(
+            "/users/\(userId)/iap/trial/engagement-extension",
+            method: "POST",
+            body: EmptyBody()
+        )
+    }
+
+    func availablePromotion(
+        userId: String,
+        language: String,
+        hasPriorPurchase: Bool
+    ) async throws -> PromotionAvailability {
+        let encodedLanguage = language.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "en"
+        return try await send(
+            "/users/\(userId)/promotions/available?language=\(encodedLanguage)&has_prior_purchase=\(hasPriorPurchase)"
+        )
+    }
+
+    func updatePromotionHomeVisibility(
+        userId: String,
+        slug: String,
+        hideOnHome: Bool
+    ) async throws {
+        let encodedSlug = slug.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? slug
+        try await sendNoContent(
+            "/users/\(userId)/promotions/\(encodedSlug)/home-visibility",
+            method: "POST",
+            body: PromotionDismissRequest(hideOnHome: hideOnHome)
+        )
+    }
+
+    func recordPromotionRedemption(
+        userId: String,
+        slug: String,
+        request: PromotionRedemptionRequest
+    ) async throws {
+        let encodedSlug = slug.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? slug
+        let _: PromotionRedemptionResponse = try await send(
+            "/users/\(userId)/promotions/\(encodedSlug)/redemptions",
+            method: "POST",
+            body: request
+        )
+    }
+
+    func recordIAPTelemetry(userId: String, request: IAPTelemetryRequest) async throws {
+        let _: IAPTelemetryResponse = try await send(
+            "/users/\(userId)/iap/telemetry",
+            method: "POST",
+            body: request
+        )
+    }
+
     func notificationPreferences(userId: String) async throws -> NotificationPreferences {
         try await send("/users/\(userId)/notification-preferences")
     }
@@ -172,6 +225,19 @@ actor CompanionAPIClient {
 
     private func sendNoContent(_ path: String, method: String) async throws {
         let request = try makeRequest(path: path, method: method, body: Optional<EmptyBody>.none)
+        try await sendNoContent(request)
+    }
+
+    private func sendNoContent<Body: Encodable>(
+        _ path: String,
+        method: String,
+        body: Body
+    ) async throws {
+        let request = try makeRequest(path: path, method: method, body: body)
+        try await sendNoContent(request)
+    }
+
+    private func sendNoContent(_ request: URLRequest) async throws {
         let (_, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse else { return }
         guard (200..<300).contains(http.statusCode) else {
