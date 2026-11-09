@@ -61,7 +61,8 @@ PROMOTION_PANEL_HTML = r"""<!doctype html>
 const fields=['name','product_id','promotional_price_brl','discount_percent','starts_at','ends_at','show_on_home','allow_home_suppression','show_on_paywall','enabled','title_pt','title_en','body_pt','body_en','cta_pt','cta_en','home_suppression_label_pt','home_suppression_label_en','plans_notice_pt','plans_notice_en'];
 let promotions=[], selected=null;
 function token(){let t=localStorage.getItem('trade-alert-admin-token');if(!t){t=prompt('Enter X-Admin-Token')||'';if(t)localStorage.setItem('trade-alert-admin-token',t)}return t}
-async function api(path,options={}){options.headers={...(options.headers||{}),'X-Admin-Token':token(),'Content-Type':'application/json'};const r=await fetch(path,options);if(!r.ok){if(r.status===401)localStorage.removeItem('trade-alert-admin-token');throw new Error(`${r.status}: ${await r.text()}`)}return r.status===204?null:r.json()}
+const apiPrefix=window.location.pathname.replace(/\/admin\/promotions\/?$/,'');
+async function api(path,options={}){options.headers={...(options.headers||{}),'X-Admin-Token':token(),'Content-Type':'application/json'};const r=await fetch(`${apiPrefix}${path}`,options);if(!r.ok){if(r.status===401)localStorage.removeItem('trade-alert-admin-token');throw new Error(`${r.status}: ${await r.text()}`)}return r.status===204?null:r.json()}
 function toast(message,bad=false){const e=document.querySelector('#toast');e.textContent=message;e.style.background=bad?'#802f46':'#21305b';e.style.display='block';setTimeout(()=>e.style.display='none',4200)}
 function text(tag,value){const e=document.createElement(tag);e.textContent=value??'';return e}
 async function load(){try{promotions=await api('/admin/promotions/api');renderPromotions();if(selected){selected=promotions.find(p=>p.id===selected.id)||promotions[0]}else selected=promotions[0];if(selected)select(selected.id)}catch(e){toast(e.message,true)}}

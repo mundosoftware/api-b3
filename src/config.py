@@ -10,6 +10,8 @@ load_dotenv("local.env")
 
 class Settings(BaseModel):
     app_name: str = "B3 Watch API"
+    app_environment: str = "production"
+    api_root_path: str = ""
     database_path: str = "database/app.db"
     server_host: str = "0.0.0.0"
     server_port: int = 8000
@@ -60,6 +62,10 @@ class Settings(BaseModel):
 
         return cls(
             app_name=os.getenv("APP_NAME", cls.model_fields["app_name"].default),
+            app_environment=os.getenv(
+                "APP_ENVIRONMENT", cls.model_fields["app_environment"].default
+            ),
+            api_root_path=os.getenv("API_ROOT_PATH", cls.model_fields["api_root_path"].default),
             database_path=os.getenv("DATABASE_PATH", cls.model_fields["database_path"].default),
             server_host=os.getenv("SERVER_HOST", cls.model_fields["server_host"].default),
             server_port=int(os.getenv("SERVER_PORT", cls.model_fields["server_port"].default)),

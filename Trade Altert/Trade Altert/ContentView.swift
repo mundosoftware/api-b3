@@ -7,6 +7,7 @@
 
 import StoreKit
 import SwiftUI
+import UIKit
 
 struct ContentView: View {
     @EnvironmentObject private var model: CompanionAppModel
@@ -60,6 +61,9 @@ struct ContentView: View {
         }
         .onChange(of: purchases.availablePromotion?.id) { _, _ in
             showHomePromotion = purchases.availablePromotion?.showOnHome == true
+        }
+        .onChange(of: purchases.availablePromotion?.showOnHome) { _, showOnHome in
+            showHomePromotion = showOnHome == true
         }
         .onChange(of: purchases.trialExtensionDaysGranted) { _, days in
             guard days > 0 else { return }
@@ -221,11 +225,18 @@ enum PromotionPresentationContext {
 }
 
 extension PromotionOffer {
-    var localizedEndDate: String {
+    func localizedEndDate(locale: Locale) -> String {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         let date = formatter.date(from: endsAt) ?? ISO8601DateFormatter().date(from: endsAt)
-        return date?.formatted(date: .long, time: .shortened) ?? endsAt
+        guard let date else { return endsAt }
+
+        let localizedFormatter = DateFormatter()
+        localizedFormatter.locale = locale
+        localizedFormatter.timeZone = .current
+        localizedFormatter.dateStyle = .long
+        localizedFormatter.timeStyle = .short
+        return localizedFormatter.string(from: date)
     }
 }
 
@@ -261,7 +272,12 @@ struct PromotionOfferView: View {
                 Text(promotion.text.body)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                Text(String(format: language.text("promotion.valid_until"), promotion.localizedEndDate))
+                Text(
+                    String(
+                        format: language.text("promotion.valid_until"),
+                        promotion.localizedEndDate(locale: language.locale)
+                    )
+                )
                     .font(.subheadline.bold())
 
                 VStack(alignment: .leading, spacing: 4) {
@@ -275,17 +291,7 @@ struct PromotionOfferView: View {
                         .foregroundStyle(.secondary)
                 }
 
-                VStack(alignment: .leading, spacing: 7) {
-                    Text(language.text("promotion.code.copied_instruction"))
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                    Text(promotion.code)
-                        .font(.system(.title3, design: .monospaced).weight(.semibold))
-                        .textSelection(.enabled)
-                        .padding(12)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
-                }
+                PromotionCodeCopyNotice(code: promotion.code)
 
                 if context == .home && promotion.allowHomeSuppression {
                     Toggle(promotion.text.homeSuppressionLabel, isOn: $hideOnHome)
@@ -329,6 +335,71 @@ struct PromotionOfferView: View {
             .frame(maxWidth: .infinity)
         }
         .background(Color(.systemGroupedBackground))
+    }
+}
+
+struct PromotionCodeCopyNotice: View {
+    @EnvironmentObject private var language: AppLanguage
+    let code: String
+    @State private var didCopy = false
+    @State private var resetFeedbackTask: Task<Void, Never>?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text(language.text("promotion.code.copied_instruction"))
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(language.text("promotion.code.label"))
+                        .font(.caption.bold())
+                        .foregroundStyle(.secondary)
+                    Text(code)
+                        .font(.system(.title3, design: .monospaced).weight(.semibold))
+                        .textSelection(.enabled)
+                }
+
+                Spacer(minLength: 8)
+
+                Button(action: copyCode) {
+                    Label(
+                        language.text(didCopy ? "promotion.code.copied" : "promotion.code.copy"),
+                        systemImage: didCopy ? "checkmark.circle.fill" : "doc.on.doc.fill"
+                    )
+                    .font(.subheadline.bold())
+                }
+                .buttonStyle(.bordered)
+                .tint(didCopy ? .green : .orange)
+                .contentTransition(.symbolEffect(.replace))
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+        }
+        .onDisappear {
+            resetFeedbackTask?.cancel()
+        }
+    }
+
+    private func copyCode() {
+        let feedback = UINotificationFeedbackGenerator()
+        feedback.prepare()
+        UIPasteboard.general.string = code
+        feedback.notificationOccurred(.success)
+
+        resetFeedbackTask?.cancel()
+        withAnimation(.snappy) {
+            didCopy = true
+        }
+        resetFeedbackTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeOut(duration: 0.2)) {
+                didCopy = false
+            }
+        }
     }
 }
 

@@ -233,6 +233,7 @@ final class PurchaseStore: ObservableObject {
                 slug: promotion.slug,
                 hideOnHome: hidden
             )
+            await loadPromotion(userId: currentUserId)
         } catch {
             message = AppLanguage.shared.text("promotion.error.preference")
             await recordTelemetry(
@@ -367,11 +368,15 @@ final class PurchaseStore: ObservableObject {
     }
 
     private func reviewEligibleDateKey(userId: String) -> String {
-        "tradealert.review.eligible-at.\(userId)"
+        "tradealert\(reviewEnvironmentSuffix).review.eligible-at.\(userId)"
     }
 
     private func reviewRequestedKey(userId: String) -> String {
-        "tradealert.review.requested.\(userId)"
+        "tradealert\(reviewEnvironmentSuffix).review.requested.\(userId)"
+    }
+
+    private var reviewEnvironmentSuffix: String {
+        AppConfig.apiEnvironment == .development ? ".development" : ""
     }
 
     private func hasEverPurchased() async -> Bool {
@@ -442,7 +447,7 @@ final class PurchaseStore: ObservableObject {
             message: details,
             platform: "ios",
             environment: transaction.map { String(describing: $0.environment) }
-                ?? String(describing: AppConfig.environment),
+                ?? AppConfig.apiEnvironment.rawValue,
             appVersion: device.appVersion,
             deviceModel: device.model,
             deviceOs: device.systemVersion,

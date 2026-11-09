@@ -68,6 +68,18 @@ final class CompanionAppModel: ObservableObject {
         }
     }
 
+    func reloadForAPIEnvironmentChange() async {
+        favorites = []
+        searchResults = []
+        alertsByTicker = [:]
+        preferences = nil
+        aiOutlookFeatureStatus = nil
+        aiAnalysisCache = [:]
+        persistedAIOutlookJobs = []
+        errorMessage = nil
+        await bootstrap()
+    }
+
     func refreshFavorites() async {
         await run {
             self.favorites = try await self.api.favorites(userId: self.userId)

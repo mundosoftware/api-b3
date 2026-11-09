@@ -506,7 +506,12 @@ private struct PromotionPaywallCard: View {
                 .foregroundStyle(.orange)
             Text(promotion.text.body)
                 .fixedSize(horizontal: false, vertical: true)
-            Text(String(format: language.text("promotion.valid_until"), promotion.localizedEndDate))
+            Text(
+                String(
+                    format: language.text("promotion.valid_until"),
+                    promotion.localizedEndDate(locale: language.locale)
+                )
+            )
                 .font(.subheadline.bold())
             HStack(alignment: .firstTextBaseline) {
                 Text(purchases.localizedPromotionPrice(promotion))
@@ -518,6 +523,7 @@ private struct PromotionPaywallCard: View {
             Text(promotion.text.plansNotice)
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            PromotionCodeCopyNotice(code: promotion.code)
             Button {
                 Task {
                     await purchases.beginPromotionRedemption(promotion, hideOnHome: false)

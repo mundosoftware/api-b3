@@ -154,7 +154,16 @@ final class AppLanguage: ObservableObject {
         "label.based_on_price": [.pt: "Preço base", .en: "Base price"],
         "label.target_price": [.pt: "Preço-alvo", .en: "Target price"],
         "label.debug": [.pt: "Debug", .en: "Debug"],
+        "label.development": [.pt: "Desenvolvimento", .en: "Development"],
         "label.production": [.pt: "Produção", .en: "Production"],
+        "server.use_development": [
+            .pt: "Usar servidor de desenvolvimento",
+            .en: "Use development server"
+        ],
+        "server.development_notice": [
+            .pt: "Disponível apenas em builds Debug. Os dados de desenvolvimento são separados da produção.",
+            .en: "Available only in Debug builds. Development data is isolated from production."
+        ],
         "status.registered": [.pt: "Registrado", .en: "Registered"],
         "status.not_registered": [.pt: "Não registrado", .en: "Not registered"],
         "status.active": [.pt: "Ativo", .en: "Active"],
@@ -495,12 +504,19 @@ final class AppLanguage: ObservableObject {
             .en: "Valid until %@"
         ],
         "promotion.code.copied_instruction": [
-            .pt: "O código abaixo será copiado. Cole-o na tela segura da App Store.",
-            .en: "The code below will be copied. Paste it into the secure App Store sheet."
+            .pt: "Ao continuar, o código abaixo será copiado automaticamente. Cole-o na tela segura da App Store.",
+            .en: "When you continue, the code below is copied automatically. Paste it into the secure App Store sheet."
         ],
+        "promotion.code.label": [.pt: "Código promocional", .en: "Promotional code"],
+        "promotion.code.copy": [.pt: "Copiar", .en: "Copy"],
+        "promotion.code.copied": [.pt: "Copiado", .en: "Copied"],
         "promotion.native_sheet_notice": [
             .pt: "O resgate e a compra são concluídos na tela nativa da App Store.",
             .en: "Redemption and purchase are completed in the native App Store sheet."
+        ],
+        "promotion.settings.home_visibility_help": [
+            .pt: "Desative esta opção para voltar a mostrar a promoção na tela inicial.",
+            .en: "Turn this off to show the promotion on Home again."
         ],
         "promotion.error.redemption": [
             .pt: "Não foi possível abrir o resgate da App Store: %@",

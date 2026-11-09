@@ -118,7 +118,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 except asyncio.CancelledError:
                     pass
 
-    app = FastAPI(title=settings.app_name, version="1.0.0", lifespan=lifespan)
+    app = FastAPI(
+        title=settings.app_name,
+        version="1.0.0",
+        root_path=settings.api_root_path,
+        lifespan=lifespan,
+    )
 
     def require_admin(x_admin_token: str | None) -> None:
         if settings.admin_token and x_admin_token != settings.admin_token:
@@ -142,6 +147,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "ai_outlook_worker_enabled": settings.ai_outlook_worker_enabled,
             "ai_outlook_job_max_attempts": settings.ai_outlook_job_max_attempts,
             "kronos_enabled": settings.kronos_enabled,
+            "environment": settings.app_environment,
+            "api_root_path": settings.api_root_path,
             "universal_notifier": universal_notifier,
         }
 

@@ -15,11 +15,13 @@ usage() {
 Usage:
   ./scripts/deploy_vps.sh local [local.env] [--no-start] [--skip-install]
   ./scripts/deploy_vps.sh vps [local.env] [--reset-notifier]
+  ./scripts/deploy_vps.sh vps-dev [local.env]
   ./scripts/deploy_vps.sh [local.env]
 
 Modes:
   local        Prepare a local development environment and start Uvicorn with reload.
   vps          Deploy to the VPS over SSH and install/restart systemd service.
+  vps-dev      Deploy an isolated development service exposed below /dev.
 
 Options:
   --no-start       Local mode only: install/init but do not start Uvicorn.
@@ -54,11 +56,14 @@ trap cleanup EXIT
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    local|dev|--local|--dev)
+    local|--local|--dev)
       MODE="local"
       ;;
     vps|remote|--vps|--remote)
       MODE="vps"
+      ;;
+    vps-dev|development|--vps-dev)
+      MODE="vps-dev"
       ;;
     --no-start)
       NO_START="true"
@@ -167,6 +172,49 @@ LOCAL_CHECK_LOOP_ENABLED="${LOCAL_CHECK_LOOP_ENABLED:-false}"
 LOCAL_ONESIGNAL_ENABLED="${LOCAL_ONESIGNAL_ENABLED:-false}"
 SSH_KEYCHAIN_ENABLED="${SSH_KEYCHAIN_ENABLED:-auto}"
 SSH_KEYCHAIN_REQUIRED="${SSH_KEYCHAIN_REQUIRED:-false}"
+
+# A VPS development deploy derives isolated runtime names from the production
+# values in local.env. nginx remains shared because it owns ports 80/443, but
+# /dev is routed to the isolated development service and database.
+DEPLOYMENT_ENVIRONMENT="${APP_ENVIRONMENT:-production}"
+API_ROOT_PATH="${API_ROOT_PATH:-}"
+PRODUCTION_APP_DIR="${APP_DIR:-}"
+PRODUCTION_SERVICE_NAME="${SERVICE_NAME:-}"
+PRODUCTION_SERVER_PORT="${SERVER_PORT}"
+PRODUCTION_UNIVERSAL_NOTIFIER_ENABLED="${UNIVERSAL_NOTIFIER_ENABLED}"
+PRODUCTION_UNIVERSAL_NOTIFIER_HTTP_PORT="${UNIVERSAL_NOTIFIER_HTTP_PORT}"
+DEV_API_PREFIX="${DEV_API_PREFIX:-/dev}"
+DEV_SERVER_PORT="${DEV_SERVER_PORT:-8001}"
+DEV_APP_DIR="${DEV_APP_DIR:-${PRODUCTION_APP_DIR}-dev}"
+DEV_SERVICE_NAME="${DEV_SERVICE_NAME:-${PRODUCTION_SERVICE_NAME}-dev}"
+DEV_DATABASE_PATH="${DEV_DATABASE_PATH:-database/app-dev.db}"
+NGINX_SITE_NAME="${NGINX_SITE_NAME:-${PRODUCTION_SERVICE_NAME}}"
+
+if [[ "${MODE}" == "vps-dev" ]]; then
+  if [[ "${DEV_API_PREFIX}" != /* || "${DEV_API_PREFIX}" == "/" || "${DEV_API_PREFIX}" == */ ]]; then
+    echo "DEV_API_PREFIX must start with / and must not end with / (example: /dev)" >&2
+    exit 1
+  fi
+  DEPLOYMENT_ENVIRONMENT="development"
+  API_ROOT_PATH="${DEV_API_PREFIX}"
+  APP_NAME="${DEV_APP_NAME:-${APP_NAME:-B3 Watch API} Development}"
+  APP_DIR="${DEV_APP_DIR}"
+  SERVICE_NAME="${DEV_SERVICE_NAME}"
+  SERVER_PORT="${DEV_SERVER_PORT}"
+  DATABASE_PATH="${DEV_DATABASE_PATH}"
+  CHECK_LOOP_ENABLED="${DEV_CHECK_LOOP_ENABLED:-false}"
+  ONESIGNAL_ENABLED="${DEV_ONESIGNAL_ENABLED:-false}"
+  AI_OUTLOOK_WORKER_ENABLED="${DEV_AI_OUTLOOK_WORKER_ENABLED:-true}"
+  UNIVERSAL_NOTIFIER_ENABLED="false"
+  UNIVERSAL_NOTIFIER_HTTP_TOKEN=""
+  PROMOTION_CODES_CSV_PATH="${DEV_PROMOTION_CODES_CSV_PATH:-Promotions/development-offer-codes.csv}"
+  KRONOS_REPO_PATH="${DEV_KRONOS_REPO_PATH:-${APP_DIR}/.deps/Kronos}"
+  KRONOS_CACHE_DIR="${DEV_KRONOS_CACHE_DIR:-${APP_DIR}/.cache/kronos}"
+  HF_HOME="${DEV_HF_HOME:-${KRONOS_CACHE_DIR}/huggingface}"
+  TORCH_HOME="${DEV_TORCH_HOME:-${KRONOS_CACHE_DIR}/torch}"
+fi
+
+API_PUBLIC_PREFIX="${API_ROOT_PATH}"
 
 quote_env_value() {
   local value="${1:-}"
@@ -436,16 +484,26 @@ if [[ "${MODE}" == "local" ]]; then
   exit 0
 fi
 
+if [[ "${MODE}" == "vps-dev" && "${RESET_UNIVERSAL_NOTIFIER}" == "true" ]]; then
+  echo "--reset-notifier is only supported for the production VPS deploy" >&2
+  exit 1
+fi
+
 : "${VPS_HOST:?VPS_HOST is required}"
 : "${VPS_USER:?VPS_USER is required}"
+: "${PRODUCTION_APP_DIR:?APP_DIR is required}"
+: "${PRODUCTION_SERVICE_NAME:?SERVICE_NAME is required}"
 : "${APP_DIR:?APP_DIR is required}"
 : "${SERVICE_NAME:?SERVICE_NAME is required}"
 : "${APP_USER:?APP_USER is required}"
-: "${ONESIGNAL_APP_ID:?ONESIGNAL_APP_ID is required}"
-: "${ONESIGNAL_REST_API_KEY:?ONESIGNAL_REST_API_KEY is required}"
-: "${ONESIGNAL_WATCH_APP_ID:?ONESIGNAL_WATCH_APP_ID is required for standalone watchOS notifications}"
-: "${ONESIGNAL_WATCH_REST_API_KEY:?ONESIGNAL_WATCH_REST_API_KEY is required for standalone watchOS notifications}"
 : "${ADMIN_TOKEN:?ADMIN_TOKEN is required}"
+
+if truthy "${ONESIGNAL_ENABLED}"; then
+  : "${ONESIGNAL_APP_ID:?ONESIGNAL_APP_ID is required when OneSignal is enabled}"
+  : "${ONESIGNAL_REST_API_KEY:?ONESIGNAL_REST_API_KEY is required when OneSignal is enabled}"
+  : "${ONESIGNAL_WATCH_APP_ID:?ONESIGNAL_WATCH_APP_ID is required for standalone watchOS notifications}"
+  : "${ONESIGNAL_WATCH_REST_API_KEY:?ONESIGNAL_WATCH_REST_API_KEY is required for standalone watchOS notifications}"
+fi
 
 if [[ "${PROMOTION_CODES_CSV_PATH}" == /* ]]; then
   echo "PROMOTION_CODES_CSV_PATH must be relative to the project root for deployment sync" >&2
@@ -523,24 +581,25 @@ public_health_url() {
 
 public_url_for_path() {
   local path="$1"
+  local public_path="${API_PUBLIC_PREFIX}${path}"
   if https_enabled; then
     if [[ "${HTTPS_SERVER_PORT}" == "443" ]]; then
-      printf 'https://%s%s' "${VPS_HOST}" "${path}"
+      printf 'https://%s%s' "${VPS_HOST}" "${public_path}"
     else
-      printf 'https://%s:%s%s' "${VPS_HOST}" "${HTTPS_SERVER_PORT}" "${path}"
+      printf 'https://%s:%s%s' "${VPS_HOST}" "${HTTPS_SERVER_PORT}" "${public_path}"
     fi
   elif [[ "${PUBLIC_SERVER_PORT}" == "80" ]]; then
-    printf 'http://%s%s' "${VPS_HOST}" "${path}"
+    printf 'http://%s%s' "${VPS_HOST}" "${public_path}"
   else
-    printf 'http://%s:%s%s' "${VPS_HOST}" "${PUBLIC_SERVER_PORT}" "${path}"
+    printf 'http://%s:%s%s' "${VPS_HOST}" "${PUBLIC_SERVER_PORT}" "${public_path}"
   fi
 }
 
 wait_for_remote_public_health() {
-  local remote_health_url="http://127.0.0.1:${PUBLIC_SERVER_PORT}/health"
+  local remote_health_url="http://127.0.0.1:${PUBLIC_SERVER_PORT}${API_PUBLIC_PREFIX}/health"
   local curl_tls_flag=""
   if https_enabled; then
-    remote_health_url="https://127.0.0.1:${HTTPS_SERVER_PORT}/health"
+    remote_health_url="https://127.0.0.1:${HTTPS_SERVER_PORT}${API_PUBLIC_PREFIX}/health"
     curl_tls_flag="-k"
   fi
   echo "Waiting for public port health inside VPS: ${remote_health_url}"
@@ -567,6 +626,32 @@ check_public_health() {
   echo "Most common causes: VPS firewall/security-group port ${PUBLIC_SERVER_PORT} is closed, nginx is not listening on the public port, TLS certificate issuance failed, or the provider blocks direct inbound traffic." >&2
   print_remote_diagnostics
   return 1
+}
+
+production_public_health_url() {
+  if https_enabled; then
+    if [[ "${HTTPS_SERVER_PORT}" == "443" ]]; then
+      printf 'https://%s/health' "${VPS_HOST}"
+    else
+      printf 'https://%s:%s/health' "${VPS_HOST}" "${HTTPS_SERVER_PORT}"
+    fi
+  elif [[ "${PUBLIC_SERVER_PORT}" == "80" ]]; then
+    printf 'http://%s/health' "${VPS_HOST}"
+  else
+    printf 'http://%s:%s/health' "${VPS_HOST}" "${PUBLIC_SERVER_PORT}"
+  fi
+}
+
+check_production_health_for_dev_deploy() {
+  if [[ "${MODE}" != "vps-dev" ]]; then
+    return
+  fi
+
+  local public_url
+  public_url="$(production_public_health_url)"
+  echo "Confirming production remains healthy: ${public_url}"
+  remote "systemctl is-active '${PRODUCTION_SERVICE_NAME}' >/dev/null && curl -fsS --max-time 5 'http://127.0.0.1:${PRODUCTION_SERVER_PORT}/health' >/dev/null"
+  curl -fsS --max-time 8 "${public_url}" >/dev/null
 }
 
 check_public_universal_notifier() {
@@ -626,15 +711,15 @@ check_public_ai_outlook_routes() {
 
 configure_reverse_proxy() {
   local notifier_locations=""
-  if truthy "${UNIVERSAL_NOTIFIER_ENABLED}"; then
+  if truthy "${PRODUCTION_UNIVERSAL_NOTIFIER_ENABLED}"; then
     notifier_locations="
     location = /v1/events {
-        proxy_pass http://127.0.0.1:${UNIVERSAL_NOTIFIER_HTTP_PORT}/v1/events;
+        proxy_pass http://127.0.0.1:${PRODUCTION_UNIVERSAL_NOTIFIER_HTTP_PORT}/v1/events;
     }
 "
   fi
-  echo "Installing nginx HTTP reverse proxy on :${HTTP_SERVER_PORT} -> 127.0.0.1:${SERVER_PORT}"
-  remote_sudo "cat > /etc/nginx/sites-available/${SERVICE_NAME} <<EOF
+  echo "Installing shared nginx HTTP routes: / -> :${PRODUCTION_SERVER_PORT}, ${DEV_API_PREFIX}/ -> :${DEV_SERVER_PORT}"
+  remote_sudo "cat > /etc/nginx/sites-available/${NGINX_SITE_NAME} <<EOF
 server {
     listen ${HTTP_SERVER_PORT} default_server;
     listen [::]:${HTTP_SERVER_PORT} default_server;
@@ -646,14 +731,29 @@ server {
     }
   ${notifier_locations}
 
+    location = ${DEV_API_PREFIX} {
+        return 308 ${DEV_API_PREFIX}/;
+    }
+
+    location ${DEV_API_PREFIX}/ {
+        proxy_pass http://127.0.0.1:${DEV_SERVER_PORT}/;
+        proxy_http_version 1.1;
+        proxy_set_header Host ${VPS_HOST};
+        proxy_set_header X-Forwarded-Proto http;
+        proxy_set_header X-Forwarded-Prefix ${DEV_API_PREFIX};
+    }
+
     location / {
-        proxy_pass http://127.0.0.1:${SERVER_PORT};
+        proxy_pass http://127.0.0.1:${PRODUCTION_SERVER_PORT};
+        proxy_http_version 1.1;
+        proxy_set_header Host ${VPS_HOST};
+        proxy_set_header X-Forwarded-Proto http;
     }
 }
 EOF
 mkdir -p /var/www/certbot
 rm -f /etc/nginx/sites-enabled/default
-ln -sf /etc/nginx/sites-available/${SERVICE_NAME} /etc/nginx/sites-enabled/${SERVICE_NAME}
+ln -sf /etc/nginx/sites-available/${NGINX_SITE_NAME} /etc/nginx/sites-enabled/${NGINX_SITE_NAME}
 nginx -t
 systemctl enable nginx
 systemctl restart nginx"
@@ -701,15 +801,15 @@ configure_https_reverse_proxy() {
   local cert_name
   local notifier_locations=""
   cert_name="$(certificate_name)"
-  if truthy "${UNIVERSAL_NOTIFIER_ENABLED}"; then
+  if truthy "${PRODUCTION_UNIVERSAL_NOTIFIER_ENABLED}"; then
     notifier_locations="
     location = /v1/events {
-        proxy_pass http://127.0.0.1:${UNIVERSAL_NOTIFIER_HTTP_PORT}/v1/events;
+        proxy_pass http://127.0.0.1:${PRODUCTION_UNIVERSAL_NOTIFIER_HTTP_PORT}/v1/events;
     }
 "
   fi
-  echo "Installing nginx HTTPS reverse proxy on :${HTTPS_SERVER_PORT} -> 127.0.0.1:${SERVER_PORT}"
-  remote_sudo "cat > /etc/nginx/sites-available/${SERVICE_NAME} <<EOF
+  echo "Installing shared nginx HTTPS routes: / -> :${PRODUCTION_SERVER_PORT}, ${DEV_API_PREFIX}/ -> :${DEV_SERVER_PORT}"
+  remote_sudo "cat > /etc/nginx/sites-available/${NGINX_SITE_NAME} <<EOF
 server {
     listen ${HTTP_SERVER_PORT} default_server;
     listen [::]:${HTTP_SERVER_PORT} default_server;
@@ -721,7 +821,7 @@ server {
     }
 
     location / {
-        return 301 https://${VPS_HOST};
+        return 301 https://${VPS_HOST}\\\$request_uri;
     }
 }
 
@@ -737,8 +837,20 @@ server {
     ssl_prefer_server_ciphers off;
   ${notifier_locations}
 
+    location = ${DEV_API_PREFIX} {
+        return 308 ${DEV_API_PREFIX}/;
+    }
+
+    location ${DEV_API_PREFIX}/ {
+        proxy_pass http://127.0.0.1:${DEV_SERVER_PORT}/;
+        proxy_http_version 1.1;
+        proxy_set_header Host ${VPS_HOST};
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Prefix ${DEV_API_PREFIX};
+    }
+
     location / {
-        proxy_pass http://127.0.0.1:${SERVER_PORT};
+        proxy_pass http://127.0.0.1:${PRODUCTION_SERVER_PORT};
         proxy_http_version 1.1;
         proxy_set_header Host ${VPS_HOST};
         proxy_set_header X-Forwarded-Proto https;
@@ -959,6 +1071,8 @@ check_remote_universal_notifier() {
   return 1
 }
 
+check_production_health_for_dev_deploy
+
 echo "Preparing ${SSH_TARGET}:${APP_DIR}"
 REMOTE_PACKAGES="python3 python3-venv python3-pip rsync curl"
 if truthy "${KRONOS_INSTALL}" || truthy "${UNIVERSAL_NOTIFIER_ENABLED}"; then
@@ -1000,6 +1114,8 @@ TMP_ENV="$(mktemp)"
 CLEANUP_FILES+=("${TMP_ENV}")
 {
   write_env_line "APP_NAME" "${APP_NAME:-B3 Watch API}"
+  write_env_line "APP_ENVIRONMENT" "${DEPLOYMENT_ENVIRONMENT}"
+  write_env_line "API_ROOT_PATH" "${API_ROOT_PATH}"
   write_env_line "DATABASE_PATH" "${DATABASE_PATH}"
   write_env_line "SERVER_HOST" "${SERVICE_BIND_HOST}"
   write_env_line "SERVER_PORT" "${SERVER_PORT}"
@@ -1051,7 +1167,7 @@ fi
 echo "Installing systemd service"
 remote_sudo "cat > /etc/systemd/system/${SERVICE_NAME}.service <<EOF
 [Unit]
-Description=B3 Watch API
+Description=B3 Watch API (${DEPLOYMENT_ENVIRONMENT})
 After=network-online.target
 Wants=network-online.target
 
@@ -1070,21 +1186,27 @@ systemctl daemon-reload
 systemctl enable ${SERVICE_NAME}
 systemctl restart ${SERVICE_NAME}"
 
-if reverse_proxy_enabled; then
+if reverse_proxy_enabled && { [[ "${MODE}" == "vps" ]] || ! https_enabled; }; then
   configure_reverse_proxy
 fi
 
 allow_public_ports
 
 if https_enabled; then
-  install_certbot
-  issue_tls_certificate
+  if [[ "${MODE}" == "vps" ]]; then
+    install_certbot
+    issue_tls_certificate
+  fi
   configure_https_reverse_proxy
-  install_certificate_renewal_timer
+  if [[ "${MODE}" == "vps" ]]; then
+    install_certificate_renewal_timer
+  fi
 fi
 
-configure_universal_notifier_service
-check_remote_universal_notifier
+if [[ "${MODE}" == "vps" ]]; then
+  configure_universal_notifier_service
+  check_remote_universal_notifier
+fi
 
 wait_for_remote_health
 check_internal_ai_outlook_routes
@@ -1094,6 +1216,7 @@ fi
 check_public_health
 check_public_universal_notifier
 check_public_ai_outlook_routes
+check_production_health_for_dev_deploy
 
 echo "Deployment finished."
 echo "Health URL: $(public_health_url)"

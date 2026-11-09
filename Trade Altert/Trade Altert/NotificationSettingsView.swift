@@ -6,6 +6,10 @@ struct NotificationSettingsView: View {
     @EnvironmentObject private var language: AppLanguage
     @EnvironmentObject private var purchases: PurchaseStore
     @State private var showPlansSheet = false
+    #if DEBUG
+    @AppStorage(AppConfig.apiEnvironmentStorageKey)
+    private var apiEnvironmentRawValue = AppConfig.APIEnvironment.production.rawValue
+    #endif
 
     var body: some View {
         Form {
@@ -85,18 +89,57 @@ struct NotificationSettingsView: View {
 
             #if DEBUG
             Section(language.text("section.server")) {
+                Toggle(
+                    language.text("server.use_development"),
+                    isOn: Binding(
+                        get: {
+                            apiEnvironmentRawValue == AppConfig.APIEnvironment.development.rawValue
+                        },
+                        set: { enabled in
+                            apiEnvironmentRawValue = enabled
+                                ? AppConfig.APIEnvironment.development.rawValue
+                                : AppConfig.APIEnvironment.production.rawValue
+                        }
+                    )
+                )
+                .tint(.orange)
+
                 LabeledContent(
                     language.text("label.mode"),
-                    value: AppConfig.environment == .debug
-                        ? language.text("label.debug")
+                    value: AppConfig.apiEnvironment == .development
+                        ? language.text("label.development")
                         : language.text("label.production")
                 )
                 LabeledContent(language.text("label.api"), value: AppConfig.apiBaseURL.absoluteString)
+                Text(language.text("server.development_notice"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                if let promotion = purchases.availablePromotion,
+                   promotion.allowHomeSuppression {
+                    Toggle(
+                        promotion.text.homeSuppressionLabel,
+                        isOn: Binding(
+                            get: { !promotion.showOnHome },
+                            set: { hidden in
+                                Task {
+                                    await purchases.setPromotionHiddenOnHome(
+                                        promotion,
+                                        hidden: hidden
+                                    )
+                                }
+                            }
+                        )
+                    )
+                    Text(language.text("promotion.settings.home_visibility_help"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
             #endif
         }
         .navigationTitle(language.text("tab.settings"))
-        .disabled(model.isLoading)
+        .disabled(model.isLoading || purchases.isLoadingProducts)
         .sheet(isPresented: $showPlansSheet) {
             PurchasePlansSheetView()
                 .presentationDetents([.large])
@@ -105,6 +148,14 @@ struct NotificationSettingsView: View {
         .task {
             await purchases.load(userId: model.userId)
         }
+        #if DEBUG
+        .onChange(of: apiEnvironmentRawValue) { _, _ in
+            Task {
+                await model.reloadForAPIEnvironmentChange()
+                await purchases.load(userId: model.userId)
+            }
+        }
+        #endif
     }
 
     private func planTitle(for product: Product) -> String {

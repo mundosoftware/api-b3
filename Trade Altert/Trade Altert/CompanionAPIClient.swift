@@ -17,7 +17,6 @@ enum CompanionAPIError: Error, LocalizedError {
 actor CompanionAPIClient {
     static let shared = CompanionAPIClient()
 
-    private let baseURL = AppConfig.apiBaseURL
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
 
@@ -250,7 +249,7 @@ actor CompanionAPIClient {
         method: String,
         body: Body?
     ) throws -> URLRequest {
-        guard let url = URL(string: path, relativeTo: baseURL) else {
+        guard let url = AppConfig.apiURL(for: path) else {
             throw CompanionAPIError.invalidURL
         }
         var request = URLRequest(url: url)
