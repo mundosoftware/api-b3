@@ -137,7 +137,7 @@ curl --request PUT "$API_BASE/admin/features/ai-outlook" \
 
 The global flag controls availability for every user. Per-user activation remains stored as `ai_outlook_enabled` in notification preferences and appears in admin telemetry/device reports.
 
-The Postman collection in `docs/telemetry-postman-collection.json` includes `/health`, public AI Outlook availability, admin enable/disable calls, and user preference telemetry for `ai_outlook_enabled`.
+The Postman collection in `docs/telemetry-postman-collection.json` includes `/health`, public AI Outlook availability, admin enable/disable calls, user preference telemetry for `ai_outlook_enabled`, and the app-version policy/interaction endpoints.
 
 Alert rules support:
 
@@ -185,10 +185,10 @@ The script installs system packages, syncs the project, creates a Python venv, w
 Deploy the test environment without replacing or restarting the production API service:
 
 ```bash
-bash scripts/deploy_vps.sh vps-dev local.env
+bash scripts/deploy_vps.sh vps-dev .env.dev
 ```
 
-The development API is exposed at `https://<VPS_HOST>/dev`, with health, docs, and promotions available at `/dev/health`, `/dev/docs`, and `/dev/admin/promotions`. It uses `${APP_DIR}-dev`, `${SERVICE_NAME}-dev`, port `8001`, `database/app-dev.db`, separate model caches, and a development promotion-code CSV. Alert polling, OneSignal, and Universal Notifier are disabled by default so test activity cannot deliver production notifications. The deploy checks production health before and after changing the shared nginx routing.
+The development API is exposed at `https://<VPS_HOST>/dev`, with health, docs, and the admin panel available at `/dev/health`, `/dev/docs`, and `/dev/admin`. It uses `${APP_DIR}-dev`, `${SERVICE_NAME}-dev`, port `8001`, `database/app-dev.db`, separate model caches, and a development promotion-code CSV. Alert polling, OneSignal, and Universal Notifier are disabled by default so test activity cannot deliver production notifications. The deploy checks production health before and after changing the shared nginx routing.
 
 Debug iOS builds expose **Settings → Server → Use development server**. Requests switch immediately between the production root and `/dev`; Release builds are locked to production. See [VPS development environment](docs/development-deployment.md) for configuration and operational details.
 
@@ -204,7 +204,9 @@ Trade Alert exposes `/readyz` with the notifier state, and nginx proxies `/v1/ev
 
 ### Promotions panel and StoreKit offer codes
 
-The backend imports Apple one-time offer codes from `PROMOTION_CODES_CSV_PATH` into SQLite and exposes a reusable panel at `/admin/promotions`. Campaign and code APIs require the existing `X-Admin-Token`. The iOS app shows eligible promotions on Home and/or Plans, copies the reserved code, and opens StoreKit's native offer-code redemption sheet. Code CSV files are intentionally ignored by Git and must be present in the secure deployment workspace.
+The backend optionally imports Apple one-time offer codes from `PROMOTION_CODES_CSV_PATH` into SQLite and exposes a reusable admin panel at `/admin` (or `/dev/admin` in development). Its collapsible sidebar includes Overview, Promotions, App versions, and the operational datasets from the telemetry Postman collection. Campaign, version-policy, and telemetry APIs require the existing `X-Admin-Token`. Administrators can localize and independently show or hide the promotion body, Plans notice, price disclaimer, automatic-copy instruction, native-sheet notice, and valid-until label. The iOS app shows eligible promotions on Home and/or Plans, copies the reserved code, and opens StoreKit's native offer-code redemption sheet. Dedicated promotion telemetry reports impressions, closes, code copies, suppression changes, redeem taps, native-sheet outcomes, and confirmed redemptions. Code CSV files are intentionally ignored by Git, are not required during deployment, and can be imported later through the panel.
+
+The version policy is disabled by default at iOS `1.2.0`. The iOS Settings screen displays the bundle marketing version as `v.1.2.0`; the admin sidebar displays the release version derived from Git tags matching `RELEASE_1.2.0`. Administrators can configure a newer semantic version and localized soft/hard update modal in the App versions tab. The app checks this policy at startup in paywall and authenticated states, and records modal/CTA interactions. See [Promotions, app updates, and native StoreKit redemption](docs/promotions.md).
 
 The active Black Friday defaults use `lifetime_unlock`, R$ 29.90 in Brazil, and expire at the end of December 31, 2026. Regional display values are estimated from the StoreKit storefront price and campaign discount; Apple's confirmation sheet is the final price authority. See [Promotions and native StoreKit redemption](docs/promotions.md) for setup, behavior, and production-hardening notes.
 

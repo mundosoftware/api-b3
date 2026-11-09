@@ -13,12 +13,14 @@ final class CompanionAppModel: ObservableObject {
     @Published var isLoading = false
     @Published var errorMessage: String?
     @Published var shouldShowPurchasePlansFromWatch = false
+    @Published var presentedAppUpdate: AppUpdateDecision?
 
     @Published private(set) var userId: String
 
     private let api = CompanionAPIClient.shared
     private var aiAnalysisCache: [AIAnalysisCacheKey: DecisionSupportAnalysis] = [:]
     private var persistedAIOutlookJobs = AIOutlookJobStateStore.load()
+    private var dismissedSoftUpdateIDs: Set<String> = []
     private var userIdWasGenerated: Bool
 
     var iosNotificationsEnabled: Bool {
@@ -76,8 +78,70 @@ final class CompanionAppModel: ObservableObject {
         aiOutlookFeatureStatus = nil
         aiAnalysisCache = [:]
         persistedAIOutlookJobs = []
+        dismissedSoftUpdateIDs = []
         errorMessage = nil
         await bootstrap()
+        await checkForAppUpdate()
+    }
+
+    func checkForAppUpdate() async {
+        let device = CompanionDeviceSnapshot.current
+        do {
+            let decision = try await api.appUpdate(
+                currentVersion: device.semanticVersion,
+                language: AppLanguage.shared.code.rawValue
+            )
+            guard decision.available else {
+                presentedAppUpdate = nil
+                return
+            }
+            guard decision.isHardUpdate || !dismissedSoftUpdateIDs.contains(decision.id) else {
+                return
+            }
+
+            let isAlreadyPresented = presentedAppUpdate?.id == decision.id
+            presentedAppUpdate = decision
+            if !isAlreadyPresented {
+                await recordAppUpdateInteraction("modal_shown", update: decision)
+            }
+        } catch {
+            // Version checks must never block normal app startup when the server is unavailable.
+        }
+    }
+
+    func refreshPresentedAppUpdateLanguage() async {
+        guard presentedAppUpdate != nil else { return }
+        let device = CompanionDeviceSnapshot.current
+        guard let decision = try? await api.appUpdate(
+            currentVersion: device.semanticVersion,
+            language: AppLanguage.shared.code.rawValue
+        ), decision.available else {
+            return
+        }
+        presentedAppUpdate = decision
+    }
+
+    func dismissAppUpdate(_ update: AppUpdateDecision) {
+        guard !update.isHardUpdate else { return }
+        dismissedSoftUpdateIDs.insert(update.id)
+        presentedAppUpdate = nil
+    }
+
+    func recordAppUpdateInteraction(
+        _ eventType: String,
+        update: AppUpdateDecision
+    ) async {
+        let request = AppUpdateTelemetryRequest(
+            eventType: eventType,
+            platform: update.platform,
+            currentVersion: update.currentVersion,
+            targetVersion: update.targetVersion,
+            mode: update.mode,
+            environment: AppConfig.apiEnvironment.rawValue,
+            language: AppLanguage.shared.code.rawValue,
+            occurredAt: ISO8601DateFormatter().string(from: Date())
+        )
+        try? await api.recordAppUpdateTelemetry(userId: userId, request: request)
     }
 
     func refreshFavorites() async {

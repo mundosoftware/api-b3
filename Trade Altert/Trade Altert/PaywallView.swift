@@ -336,7 +336,10 @@ struct PaywallView: View {
             Link(language.text("paywall.terms_privacy"), destination: PurchaseStore.privacyAndTermsURL)
                 .font(.footnote)
         }
-        .alert(language.text("paywall.trial.wait.title"), isPresented: $showsTrialWaitAlert) {
+        .alert(
+            language.text("paywall.trial.wait.title"),
+            isPresented: $showsTrialWaitAlert.queuedBehindAppUpdate(model.presentedAppUpdate)
+        ) {
             Button(language.text("action.ok"), role: .cancel) {}
         } message: {
             Text(language.text("paywall.trial.wait.message"))
@@ -504,15 +507,14 @@ private struct PromotionPaywallCard: View {
             Label(promotion.text.title, systemImage: "tag.fill")
                 .font(.title2.bold())
                 .foregroundStyle(.orange)
-            Text(promotion.text.body)
-                .fixedSize(horizontal: false, vertical: true)
-            Text(
-                String(
-                    format: language.text("promotion.valid_until"),
-                    promotion.localizedEndDate(locale: language.locale)
-                )
-            )
-                .font(.subheadline.bold())
+            if promotion.text.showBody {
+                Text(promotion.text.body)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if promotion.text.showValidUntil {
+                Text(promotion.localizedValidUntilText(locale: language.locale))
+                    .font(.subheadline.bold())
+            }
             HStack(alignment: .firstTextBaseline) {
                 Text(purchases.localizedPromotionPrice(promotion))
                     .font(.title.bold())
@@ -520,13 +522,23 @@ private struct PromotionPaywallCard: View {
                     .font(.subheadline.bold())
                     .foregroundStyle(.green)
             }
-            Text(promotion.text.plansNotice)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            PromotionCodeCopyNotice(code: promotion.code)
+            if promotion.text.showPriceAuthority {
+                Text(promotion.text.priceAuthority)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            if promotion.text.showPlansNotice {
+                Text(promotion.text.plansNotice)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            PromotionCodeCopyNotice(promotion: promotion, context: .paywall)
             Button {
                 Task {
-                    await purchases.beginPromotionRedemption(promotion, hideOnHome: false)
+                    await purchases.beginPromotionRedemption(
+                        promotion,
+                        context: PromotionPresentationContext.paywall.rawValue
+                    )
                 }
             } label: {
                 Label(promotion.text.ctaLabel, systemImage: "apple.logo")
@@ -535,9 +547,11 @@ private struct PromotionPaywallCard: View {
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
             .tint(.orange)
-            Text(language.text("promotion.native_sheet_notice"))
-                .font(.caption2)
-                .foregroundStyle(.secondary)
+            if promotion.text.showNativeSheetNotice {
+                Text(promotion.text.nativeSheetNotice)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
         }
         .padding(18)
         .background(
@@ -548,6 +562,15 @@ private struct PromotionPaywallCard: View {
             ),
             in: RoundedRectangle(cornerRadius: 18)
         )
+        .onAppear {
+            Task {
+                await purchases.recordPromotionInteraction(
+                    "paywall_card_shown",
+                    promotion: promotion,
+                    context: PromotionPresentationContext.paywall.rawValue
+                )
+            }
+        }
         .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.orange.opacity(0.45)))
     }
 }

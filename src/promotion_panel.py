@@ -1,76 +1,198 @@
+from html import escape
+
+
 PROMOTION_PANEL_HTML = r"""<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Trade Alert Promotions</title>
+  <title>Trade Alert Admin</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,400,0,0" rel="stylesheet">
   <style>
-    :root { color-scheme: light dark; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
-    body { margin: 0; background: #0b1020; color: #eef2ff; }
-    header { padding: 24px max(24px, calc((100vw - 1280px)/2)); background: #111831; display:flex; gap:16px; align-items:center; justify-content:space-between; }
-    h1,h2 { margin:0; } .muted { color:#aab3d1; } main { max-width:1280px; margin:0 auto; padding:24px; }
-    .grid { display:grid; grid-template-columns: minmax(280px, .8fr) minmax(420px, 1.6fr); gap:20px; }
-    .card { background:#141c36; border:1px solid #293354; border-radius:16px; padding:18px; box-shadow:0 12px 35px #0004; }
-    .stats { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin:16px 0; }
-    .stat { padding:12px; background:#0e152b; border-radius:12px; } .stat strong { display:block; font-size:1.4rem; }
-    label { display:block; font-size:.84rem; color:#b7c1df; margin:12px 0 5px; }
-    input,textarea,select,button { font:inherit; } input,textarea,select { width:100%; box-sizing:border-box; padding:10px 12px; border-radius:10px; border:1px solid #354267; background:#0d1428; color:#fff; }
-    textarea { min-height:82px; resize:vertical; } input[type=checkbox] { width:auto; accent-color:#7c9cff; }
-    .checks { display:flex; flex-wrap:wrap; gap:14px; margin:14px 0; } .checks label { margin:0; display:flex; gap:7px; align-items:center; }
+    :root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, sans-serif; --side:260px; --bg:#0b1020; --surface:#141c36; --surface2:#0e152b; --line:#293554; --text:#eef2ff; --muted:#aab3d1; --brand:#7c9cff; --good:#35c98a; --bad:#f06f83; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--bg); color:var(--text); min-height:100vh; }
+    button,input,textarea,select { font:inherit; }
     button { border:0; border-radius:10px; padding:10px 14px; background:#6f8cff; color:white; font-weight:700; cursor:pointer; }
-    button.secondary { background:#293554; } button.danger { background:#a83d55; }
-    .toolbar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:14px 0; }
-    .promo { padding:14px; border:1px solid #334064; border-radius:12px; margin-top:10px; cursor:pointer; }
-    .promo.active { border-color:#7c9cff; background:#1c294d; }
-    table { width:100%; border-collapse:collapse; font-size:.88rem; } th,td { text-align:left; padding:10px 8px; border-bottom:1px solid #2b3658; vertical-align:top; } th { color:#b8c3e2; }
-    code { font-family:ui-monospace,monospace; } .pill { display:inline-block; padding:3px 8px; border-radius:999px; background:#293554; }
-    #toast { position:fixed; right:20px; bottom:20px; max-width:440px; padding:13px 16px; border-radius:12px; background:#21305b; display:none; box-shadow:0 10px 30px #0008; }
-    @media(max-width:850px){ .grid{grid-template-columns:1fr}.stats{grid-template-columns:repeat(2,1fr)} table{display:block;overflow:auto} }
+    button:hover { filter:brightness(1.08); } button.secondary { background:#293554; } button.danger { background:#a83d55; }
+    button.icon-button { width:40px; height:40px; padding:0; display:grid; place-items:center; background:transparent; }
+    .material-symbols-outlined { font-size:22px; line-height:1; }
+    .shell { display:grid; grid-template-columns:var(--side) minmax(0,1fr); min-height:100vh; transition:grid-template-columns .2s ease; }
+    .shell.collapsed { --side:76px; }
+    aside { position:sticky; top:0; height:100vh; background:#10172d; border-right:1px solid var(--line); display:flex; flex-direction:column; padding:16px 12px; overflow:hidden; }
+    .brand { display:flex; align-items:center; gap:12px; min-height:48px; padding:0 8px 18px; white-space:nowrap; }
+    .brand-mark { width:38px; height:38px; flex:0 0 38px; display:grid; place-items:center; border-radius:12px; background:linear-gradient(135deg,#8ca4ff,#566fe0); }
+    .brand-copy strong,.brand-copy span { display:block; }.brand-copy span { color:var(--muted); font-size:.75rem; margin-top:2px; }
+    nav { display:grid; gap:6px; }
+    .nav-item,.logout { width:100%; display:flex; align-items:center; gap:13px; min-height:46px; padding:0 12px; border-radius:11px; background:transparent; color:var(--muted); white-space:nowrap; text-align:left; }
+    .nav-item.active { color:white; background:#233156; }.nav-item .material-symbols-outlined,.logout .material-symbols-outlined { flex:0 0 24px; }
+    .side-bottom { margin-top:auto; display:grid; gap:6px; }.logout { color:#ff9bab; }.collapse { color:var(--muted); }
+    .panel-version { min-height:38px; display:flex; align-items:center; gap:13px; padding:0 12px; color:var(--muted); white-space:nowrap; font:600 .78rem ui-monospace,monospace; }.panel-version .material-symbols-outlined { flex:0 0 24px; }
+    .shell.collapsed .nav-label,.shell.collapsed .brand-copy,.shell.collapsed .version-label { opacity:0; pointer-events:none; }.shell.collapsed .nav-item,.shell.collapsed .logout,.shell.collapsed .panel-version { justify-content:center; padding:0; }
+    .workspace { min-width:0; }.topbar { min-height:78px; padding:18px 28px; background:#111831cc; backdrop-filter:blur(12px); border-bottom:1px solid var(--line); position:sticky; top:0; z-index:5; display:flex; align-items:center; justify-content:space-between; gap:16px; }
+    .topbar h1 { margin:0; font-size:1.4rem; }.topbar p { color:var(--muted); margin:4px 0 0; font-size:.86rem; }
+    main { padding:24px 28px 40px; max-width:1540px; margin:0 auto; }.page[hidden] { display:none !important; }
+    h2,h3 { margin:0; }.page-head { display:flex; gap:12px; align-items:center; justify-content:space-between; margin-bottom:18px; }
+    .grid { display:grid; grid-template-columns:minmax(280px,.8fr) minmax(420px,1.6fr); gap:20px; }.grid.equal { grid-template-columns:repeat(2,minmax(0,1fr)); }
+    .card { background:var(--surface); border:1px solid var(--line); border-radius:16px; padding:18px; box-shadow:0 12px 35px #0004; }.card + .card.stack { margin-top:20px; }
+    .stats { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; margin:16px 0; }.stat { padding:13px; background:var(--surface2); border-radius:12px; min-width:0; }.stat strong { display:block; font-size:1.35rem; overflow:hidden; text-overflow:ellipsis; }.stat span { color:var(--muted); font-size:.78rem; }
+    label { display:block; font-size:.82rem; color:#b7c1df; margin:12px 0 5px; } input,textarea,select { width:100%; padding:10px 12px; border-radius:10px; border:1px solid #354267; background:#0d1428; color:white; } textarea { min-height:88px; resize:vertical; } input[type=checkbox] { width:auto; accent-color:var(--brand); }
+    .checks { display:flex; flex-wrap:wrap; gap:14px; margin:14px 0; }.checks label { margin:0; display:flex; gap:7px; align-items:center; }
+    .toolbar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:14px 0; }.toolbar .push { margin-left:auto; }.muted { color:var(--muted); }.small { font-size:.8rem; }
+    .promo { padding:14px; border:1px solid #334064; border-radius:12px; margin-top:10px; cursor:pointer; }.promo.active { border-color:var(--brand); background:#1c294d; }.promo div { color:var(--muted); font-size:.82rem; margin-top:5px; }
+    .status { display:inline-flex; gap:6px; align-items:center; padding:4px 9px; border-radius:999px; background:#293554; font-size:.78rem; }.status.good { color:#8bf0c4; background:#153b36; }.status.bad { color:#ffafbb; background:#482334; }
+    table { width:100%; border-collapse:collapse; font-size:.84rem; } th,td { text-align:left; padding:10px 8px; border-bottom:1px solid #2b3658; vertical-align:top; max-width:340px; overflow-wrap:anywhere; } th { color:#b8c3e2; position:sticky; top:0; background:var(--surface); } code { font-family:ui-monospace,monospace; }.table-wrap { overflow:auto; max-height:65vh; }
+    .health-row { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 0; border-bottom:1px solid var(--line); }.health-row:last-child { border:0; }
+    .telemetry-controls { display:grid; grid-template-columns:minmax(220px,1.3fr) repeat(5,minmax(120px,1fr)) auto; gap:10px; align-items:end; }.telemetry-controls label { margin-top:0; }
+    .callout { border-left:3px solid var(--brand); padding:10px 13px; background:#111a35; color:var(--muted); border-radius:0 10px 10px 0; font-size:.84rem; }
+    .text-setting { margin-top:14px; padding:14px; border:1px solid var(--line); border-radius:12px; background:var(--surface2); }.text-setting .toolbar { margin:0 0 8px; }.text-setting .toolbar label { margin:0 0 0 auto; display:flex; gap:7px; align-items:center; }
+    #toast { position:fixed; right:20px; bottom:20px; z-index:20; max-width:460px; padding:13px 16px; border-radius:12px; background:#21305b; display:none; box-shadow:0 10px 30px #0008; }
+    @media(max-width:1050px){ .telemetry-controls{grid-template-columns:repeat(3,minmax(0,1fr))}.stats{grid-template-columns:repeat(2,1fr)} }
+    @media(max-width:850px){ :root{--side:76px}.brand-copy,.nav-label,.collapse{display:none}.nav-item,.logout{justify-content:center;padding:0}.grid,.grid.equal{grid-template-columns:1fr}.topbar,main{padding-left:18px;padding-right:18px}.telemetry-controls{grid-template-columns:1fr 1fr} }
   </style>
 </head>
 <body>
-<header><div><h1>Promotions</h1><div class="muted">Reusable App Store offer-code control panel</div></div><button class="secondary" id="tokenButton">Admin token</button></header>
-<main>
-  <div class="grid">
-    <section class="card"><div class="toolbar"><h2 style="margin-right:auto">Campaigns</h2><button class="secondary" id="newPromotion">New</button></div><div id="promotions"></div></section>
-    <section class="card" id="editor" hidden>
-      <h2 id="editorTitle">Promotion</h2>
-      <div class="stats" id="stats"></div>
-      <div class="checks">
-        <label><input id="enabled" type="checkbox"> Enabled</label>
-        <label><input id="show_on_home" type="checkbox"> Home modal</label>
-        <label><input id="allow_home_suppression" type="checkbox"> Allow “don’t show again”</label>
-        <label><input id="show_on_paywall" type="checkbox"> Plans/paywall</label>
-      </div>
-      <div class="grid">
-        <div><label>Name</label><input id="name"><label>Product ID</label><input id="product_id"><label>Brazil price</label><input id="promotional_price_brl" type="number" step="0.01"><label>Discount %</label><input id="discount_percent" type="number" step="0.01"></div>
-        <div><label>Starts at (ISO 8601)</label><input id="starts_at"><label>Ends at (ISO 8601)</label><input id="ends_at"><label>Portuguese title</label><input id="title_pt"><label>English title</label><input id="title_en"></div>
-      </div>
-      <label>Portuguese body</label><textarea id="body_pt"></textarea><label>English body</label><textarea id="body_en"></textarea>
-      <div class="grid"><div><label>CTA (PT)</label><input id="cta_pt"><label>Home suppression label (PT)</label><input id="home_suppression_label_pt"><label>Plans notice (PT)</label><textarea id="plans_notice_pt"></textarea></div><div><label>CTA (EN)</label><input id="cta_en"><label>Home suppression label (EN)</label><input id="home_suppression_label_en"><label>Plans notice (EN)</label><textarea id="plans_notice_en"></textarea></div></div>
-      <div class="toolbar"><button id="save">Save settings</button><span class="muted" id="updated"></span></div>
-    </section>
+<div class="shell" id="shell">
+  <aside>
+    <div class="brand"><div class="brand-mark"><span class="material-symbols-outlined">monitoring</span></div><div class="brand-copy"><strong>Trade Alert</strong><span>Administration</span></div></div>
+    <nav>
+      <button class="nav-item active" data-page="overview"><span class="material-symbols-outlined">dashboard</span><span class="nav-label">Overview</span></button>
+      <button class="nav-item" data-page="promotions"><span class="material-symbols-outlined">campaign</span><span class="nav-label">Promotions</span></button>
+      <button class="nav-item" data-page="versions"><span class="material-symbols-outlined">system_update</span><span class="nav-label">App versions</span></button>
+      <button class="nav-item" data-page="telemetry"><span class="material-symbols-outlined">query_stats</span><span class="nav-label">Telemetry</span></button>
+    </nav>
+    <div class="side-bottom">
+      <button class="nav-item collapse" id="collapseSidebar"><span class="material-symbols-outlined">left_panel_close</span><span class="nav-label">Collapse</span></button>
+      <div class="panel-version" title="__PANEL_VERSION__"><span class="material-symbols-outlined">sell</span><span class="version-label">__PANEL_VERSION__</span></div>
+      <button class="logout" id="logout"><span class="material-symbols-outlined">logout</span><span class="nav-label">Logout</span></button>
+    </div>
+  </aside>
+  <div class="workspace">
+    <header class="topbar"><div><h1 id="pageTitle">Overview</h1><p id="pageSubtitle">Operational health and feature controls</p></div><button class="secondary" id="changeToken"><span class="material-symbols-outlined" style="vertical-align:middle">key</span> Admin token</button></header>
+    <main>
+      <section class="page" id="page-overview">
+        <div class="stats" id="overviewStats"></div>
+        <div class="grid equal">
+          <section class="card"><div class="page-head"><h2>Service health</h2><button class="secondary" id="refreshOverview">Refresh</button></div><div id="healthRows"></div></section>
+          <section class="card"><h2>Operations</h2><div class="health-row"><div><strong>AI Outlook</strong><div class="muted small" id="aiFlagMeta">Loading policy…</div></div><label style="margin:0"><input id="aiFlag" type="checkbox"> Enabled</label></div><div class="health-row"><div><strong>Alert scheduler</strong><div class="muted small">Run one due-check cycle manually.</div></div><button class="secondary" id="runChecks">Run checks</button></div><div class="callout" style="margin-top:16px">The panel exposes the collection's operational and telemetry endpoints. Synthetic user creation and direct WhatsApp test events stay outside the UI to prevent accidental notifications.</div></section>
+        </div>
+      </section>
+
+      <section class="page" id="page-promotions" hidden>
+        <div class="grid">
+          <section class="card"><div class="toolbar"><h2>Campaigns</h2><button class="secondary push" id="newPromotion">New</button></div><div id="promotions"></div></section>
+          <section class="card" id="editor" hidden>
+            <h2 id="editorTitle">Promotion</h2><div class="stats" id="stats"></div>
+            <div class="checks"><label><input id="enabled" type="checkbox"> Enabled</label><label><input id="show_on_home" type="checkbox"> Home modal</label><label><input id="allow_home_suppression" type="checkbox"> Allow “don't show again”</label><label><input id="show_on_paywall" type="checkbox"> Plans/paywall</label></div>
+            <div class="grid equal"><div><label>Name</label><input id="name"><label>Product ID</label><input id="product_id"><label>Brazil price</label><input id="promotional_price_brl" type="number" step="0.01"><label>Discount %</label><input id="discount_percent" type="number" step="0.01"></div><div><label>Starts at (ISO 8601)</label><input id="starts_at"><label>Ends at (ISO 8601)</label><input id="ends_at"><label>Portuguese title</label><input id="title_pt"><label>English title</label><input id="title_en"></div></div>
+            <div class="grid equal"><div><label>CTA (PT)</label><input id="cta_pt"><label>Home suppression label (PT)</label><input id="home_suppression_label_pt"></div><div><label>CTA (EN)</label><input id="cta_en"><label>Home suppression label (EN)</label><input id="home_suppression_label_en"></div></div>
+            <div class="text-setting"><div class="toolbar"><h3>Body</h3><label><input id="show_body" type="checkbox"> Show</label></div><div class="grid equal"><div><label>Português</label><textarea id="body_pt"></textarea></div><div><label>English</label><textarea id="body_en"></textarea></div></div></div>
+            <div class="text-setting"><div class="toolbar"><h3>Plans notice</h3><label><input id="show_plans_notice" type="checkbox"> Show</label></div><div class="grid equal"><div><label>Português</label><textarea id="plans_notice_pt"></textarea></div><div><label>English</label><textarea id="plans_notice_en"></textarea></div></div></div>
+            <div class="text-setting"><div class="toolbar"><h3>App Store price estimate</h3><label><input id="show_price_authority" type="checkbox"> Show</label></div><div class="grid equal"><div><label>Português</label><textarea id="price_authority_pt"></textarea></div><div><label>English</label><textarea id="price_authority_en"></textarea></div></div></div>
+            <div class="text-setting"><div class="toolbar"><h3>Automatic copy instruction</h3><label><input id="show_copy_instruction" type="checkbox"> Show</label></div><div class="grid equal"><div><label>Português</label><textarea id="copy_instruction_pt"></textarea></div><div><label>English</label><textarea id="copy_instruction_en"></textarea></div></div></div>
+            <div class="text-setting"><div class="toolbar"><h3>Native App Store sheet notice</h3><label><input id="show_native_sheet_notice" type="checkbox"> Show</label></div><div class="grid equal"><div><label>Português</label><textarea id="native_sheet_notice_pt"></textarea></div><div><label>English</label><textarea id="native_sheet_notice_en"></textarea></div></div></div>
+            <div class="text-setting"><div class="toolbar"><div><h3>Valid-until label</h3><div class="muted small">Use <code>[date]</code> where the localized campaign end date should appear.</div></div><label><input id="show_valid_until" type="checkbox"> Show</label></div><div class="grid equal"><div><label>Português</label><input id="valid_until_pt"></div><div><label>English</label><input id="valid_until_en"></div></div></div>
+            <div class="toolbar"><button id="save">Save settings</button><span class="muted" id="updated"></span></div>
+          </section>
+        </div>
+        <section class="card stack" id="codesCard" hidden><div class="toolbar"><h2>Offer codes</h2><input id="csvFile" type="file" accept=".csv,text/csv" hidden><button class="secondary push" id="importCsv">Import CSV</button><select id="statusFilter" style="width:auto"><option value="">All states</option><option>available</option><option>reserved</option><option>redeemed</option></select><button class="secondary" id="reloadCodes">Reload</button></div><div class="muted small">Imports are idempotent. Redeemed codes show the user and StoreKit transaction reported by the device.</div><div class="table-wrap"><table><thead><tr><th>Code</th><th>State</th><th>Enabled</th><th>Reserved user</th><th>Redeemed user</th><th>Redeemed</th><th>Transaction</th><th></th></tr></thead><tbody id="codes"></tbody></table></div></section>
+      </section>
+
+      <section class="page" id="page-versions" hidden>
+        <div class="grid equal">
+          <section class="card"><div class="page-head"><div><h2>iOS update policy</h2><div class="muted small">The shipped app currently uses semantic version 1.2.0.</div></div><span class="status" id="versionPolicyStatus">Loading</span></div>
+            <div class="checks"><label><input id="update_enabled" type="checkbox"> Update policy enabled</label></div>
+            <div class="grid equal"><div><label>Target semantic version</label><input id="target_version" placeholder="1.3.0" pattern="\d+\.\d+\.\d+"><label>Update mode</label><select id="update_mode"><option value="soft">Soft — allow Later</option><option value="hard">Hard — block app until update</option></select></div><div><label>App Store URL</label><input id="store_url" type="url" placeholder="https://apps.apple.com/app/id…"><label>Platform</label><input value="ios" disabled></div></div>
+            <div class="grid equal"><div><h3>Português</h3><label>Title</label><input id="update_title_pt"><label>Message</label><textarea id="update_message_pt"></textarea><label>Update CTA</label><input id="update_cta_pt"><label>Later CTA</label><input id="later_cta_pt"></div><div><h3>English</h3><label>Title</label><input id="update_title_en"><label>Message</label><textarea id="update_message_en"></textarea><label>Update CTA</label><input id="update_cta_en"><label>Later CTA</label><input id="later_cta_en"></div></div>
+            <div class="toolbar"><button id="saveVersionPolicy">Save update policy</button><span class="muted" id="versionUpdated"></span></div>
+          </section>
+          <section class="card"><h2>Behavior preview</h2><div class="callout" style="margin-top:16px"><strong>Soft update</strong><br>The modal appears over any app tab and offers both configured CTAs. Selecting Later dismisses it for the current app session.</div><div class="callout" style="margin-top:12px;border-color:#f39a63"><strong>Hard update</strong><br>The modal cannot be dismissed and has no Later action. The App Store CTA remains visible when the user returns to the app.</div><div class="callout" style="margin-top:12px;border-color:#35c98a"><strong>Safe default</strong><br>The seeded policy is disabled at version 1.2.0, so an update is never forced until an administrator enables a newer target.</div></section>
+        </div>
+      </section>
+
+      <section class="page" id="page-telemetry" hidden>
+        <section class="card"><div class="telemetry-controls"><label>Dataset<select id="telemetrySource"></select></label><label>Window<select id="telemetryHours"><option value="24">24 hours</option><option value="168">7 days</option><option value="720">30 days</option></select></label><label>User ID<input id="telemetryUser" placeholder="optional"></label><label>Ticker<input id="telemetryTicker" placeholder="optional"></label><label>Product ID<input id="telemetryProduct" placeholder="optional"></label><label>Promotion slug<input id="telemetryPromotion" placeholder="optional"></label><label>Environment<select id="telemetryEnvironment"><option value="">all</option><option>production</option><option>sandbox</option><option>development</option></select></label><button id="loadTelemetry">Load</button></div><div class="toolbar"><span class="muted small" id="telemetryDescription"></span><span class="push muted small" id="telemetryCount"></span></div><div class="table-wrap"><table><thead id="telemetryHead"></thead><tbody id="telemetryBody"></tbody></table></div></section>
+        <section class="card stack"><h2>Adjust server-owned trial</h2><div class="toolbar"><input id="trialUser" placeholder="User ID" style="max-width:260px"><input id="trialDays" type="number" min="-366" max="366" placeholder="Days (+/-)" style="max-width:150px"><input id="trialReason" placeholder="Reason" style="max-width:320px"><button class="secondary" id="adjustTrial">Apply adjustment</button></div><div class="muted small">Administrative write operation from the telemetry collection. Zero is rejected; negative values end the trial when they reach the current time.</div></section>
+      </section>
+    </main>
   </div>
-  <section class="card" id="codesCard" hidden style="margin-top:20px">
-    <div class="toolbar"><h2 style="margin-right:auto">Offer codes</h2><input id="csvFile" type="file" accept=".csv,text/csv" hidden><button class="secondary" id="importCsv">Import CSV</button><select id="statusFilter" style="width:auto"><option value="">All states</option><option>available</option><option>reserved</option><option>redeemed</option></select><button class="secondary" id="reloadCodes">Reload</button></div>
-    <div class="muted">Codes are imported idempotently from the configured CSV. A redeemed row links the code to the app user and StoreKit transaction reported by the device.</div>
-    <div style="overflow:auto"><table><thead><tr><th>Code</th><th>State</th><th>Enabled</th><th>Reserved user</th><th>Redeemed user</th><th>Redeemed</th><th>Transaction</th><th></th></tr></thead><tbody id="codes"></tbody></table></div>
-  </section>
-</main><div id="toast"></div>
+</div>
+<div id="toast"></div>
 <script>
-const fields=['name','product_id','promotional_price_brl','discount_percent','starts_at','ends_at','show_on_home','allow_home_suppression','show_on_paywall','enabled','title_pt','title_en','body_pt','body_en','cta_pt','cta_en','home_suppression_label_pt','home_suppression_label_en','plans_notice_pt','plans_notice_en'];
-let promotions=[], selected=null;
-function token(){let t=localStorage.getItem('trade-alert-admin-token');if(!t){t=prompt('Enter X-Admin-Token')||'';if(t)localStorage.setItem('trade-alert-admin-token',t)}return t}
-const apiPrefix=window.location.pathname.replace(/\/admin\/promotions\/?$/,'');
-async function api(path,options={}){options.headers={...(options.headers||{}),'X-Admin-Token':token(),'Content-Type':'application/json'};const r=await fetch(`${apiPrefix}${path}`,options);if(!r.ok){if(r.status===401)localStorage.removeItem('trade-alert-admin-token');throw new Error(`${r.status}: ${await r.text()}`)}return r.status===204?null:r.json()}
-function toast(message,bad=false){const e=document.querySelector('#toast');e.textContent=message;e.style.background=bad?'#802f46':'#21305b';e.style.display='block';setTimeout(()=>e.style.display='none',4200)}
-function text(tag,value){const e=document.createElement(tag);e.textContent=value??'';return e}
-async function load(){try{promotions=await api('/admin/promotions/api');renderPromotions();if(selected){selected=promotions.find(p=>p.id===selected.id)||promotions[0]}else selected=promotions[0];if(selected)select(selected.id)}catch(e){toast(e.message,true)}}
-function renderPromotions(){const root=document.querySelector('#promotions');root.replaceChildren();promotions.forEach(p=>{const d=document.createElement('div');d.className='promo'+(selected?.id===p.id?' active':'');d.append(text('strong',p.name));d.append(text('div',`${p.enabled?'Enabled':'Disabled'} · ${p.available_code_count} available · ${p.redeemed_code_count} redeemed`));d.onclick=()=>select(p.id);root.append(d)})}
-function select(id){selected=promotions.find(p=>p.id===id);renderPromotions();document.querySelector('#editor').hidden=false;document.querySelector('#codesCard').hidden=false;document.querySelector('#editorTitle').textContent=selected.name;fields.forEach(k=>{const e=document.querySelector('#'+k);if(!e)return;if(e.type==='checkbox')e.checked=!!selected[k];else e.value=selected[k]??''});document.querySelector('#stats').replaceChildren(...[['Total',selected.code_count],['Available',selected.available_code_count],['Reserved',selected.reserved_code_count],['Redeemed',selected.redeemed_code_count]].map(([a,b])=>{const d=document.createElement('div');d.className='stat';d.append(text('strong',b));d.append(text('span',a));return d}));document.querySelector('#updated').textContent=`Updated ${selected.updated_at}`;loadCodes()}
-async function save(){const body={};fields.forEach(k=>{const e=document.querySelector('#'+k);body[k]=e.type==='checkbox'?e.checked:(e.type==='number'?Number(e.value):e.value)});try{await api(`/admin/promotions/${selected.id}`,{method:'PATCH',body:JSON.stringify(body)});toast('Promotion saved');await load()}catch(e){toast(e.message,true)}}
-async function createPromotion(){const slug=prompt('Campaign slug (lowercase, for example summer-2027)');if(!slug)return;const name=prompt('Campaign name',slug)||slug;const product_id=prompt('App Store product ID','lifetime_unlock')||'lifetime_unlock';const start=new Date(),end=new Date(start.getTime()+30*86400000);try{const created=await api('/admin/promotions',{method:'POST',body:JSON.stringify({slug,name,product_id,starts_at:start.toISOString(),ends_at:end.toISOString()})});selected=created;toast('Campaign created disabled; configure it before enabling');await load()}catch(e){toast(e.message,true)}}
-async function importCsv(file){if(!selected||!file)return;const rows=(await file.text()).split(/\r?\n/).filter(Boolean).map(line=>{const comma=line.indexOf(',');const code=(comma<0?line:line.slice(0,comma)).trim();const redeem_url=(comma<0?`https://apps.apple.com/redeem?ctx=offercodes&code=${encodeURIComponent(code)}`:line.slice(comma+1)).trim();return {code,redeem_url}}).filter(x=>x.code);if(!rows.length){toast('The CSV has no codes',true);return}try{const result=await api(`/admin/promotions/${selected.id}/codes/import`,{method:'POST',body:JSON.stringify({codes:rows})});toast(`Imported ${result.imported}; updated ${result.updated}`);await load()}catch(e){toast(e.message,true)}finally{document.querySelector('#csvFile').value=''}}
-async function loadCodes(){if(!selected)return;try{const status=document.querySelector('#statusFilter').value;const rows=await api(`/admin/promotions/${selected.id}/codes?limit=2000${status?'&status='+encodeURIComponent(status):''}`);const root=document.querySelector('#codes');root.replaceChildren();rows.forEach(c=>{const tr=document.createElement('tr');[c.code,c.status,c.enabled?'yes':'no',c.reserved_by_user_id||'—',c.redeemed_by_user_id||'—',c.redeemed_at||'—',c.transaction_id||'—'].forEach((v,i)=>{const td=document.createElement('td');td.append(i===0?text('code',v):text('span',v));tr.append(td)});const td=document.createElement('td'),b=text('button',c.enabled?'Disable':'Enable');b.className=c.enabled?'danger':'secondary';b.onclick=async()=>{try{await api(`/admin/promotions/${selected.id}/codes/${c.id}`,{method:'PATCH',body:JSON.stringify({enabled:!c.enabled})});await load();toast('Code updated')}catch(e){toast(e.message,true)}};td.append(b);tr.append(td);root.append(tr)})}catch(e){toast(e.message,true)}}
-document.querySelector('#save').onclick=save;document.querySelector('#newPromotion').onclick=createPromotion;document.querySelector('#importCsv').onclick=()=>document.querySelector('#csvFile').click();document.querySelector('#csvFile').onchange=e=>importCsv(e.target.files[0]);document.querySelector('#reloadCodes').onclick=loadCodes;document.querySelector('#statusFilter').onchange=loadCodes;document.querySelector('#tokenButton').onclick=()=>{localStorage.removeItem('trade-alert-admin-token');token();load()};load();
-</script></body></html>"""
+const storageKey='trade-alert-admin-token';
+const apiPrefix=window.location.pathname.replace(/\/admin\/?$/,'');
+const pageMeta={overview:['Overview','Operational health and feature controls'],promotions:['Promotions','Campaign settings, availability and App Store offer codes'],versions:['App versions','Semantic version policy and localized update modal'],telemetry:['Telemetry','Operational datasets from the telemetry Postman collection']};
+const promotionFields=['name','product_id','promotional_price_brl','discount_percent','starts_at','ends_at','show_on_home','allow_home_suppression','show_on_paywall','enabled','title_pt','title_en','body_pt','body_en','show_body','cta_pt','cta_en','home_suppression_label_pt','home_suppression_label_en','plans_notice_pt','plans_notice_en','show_plans_notice','price_authority_pt','price_authority_en','show_price_authority','copy_instruction_pt','copy_instruction_en','show_copy_instruction','native_sheet_notice_pt','native_sheet_notice_en','show_native_sheet_notice','valid_until_pt','valid_until_en','show_valid_until'];
+const versionFields=['target_version','store_url','update_title_pt','update_title_en','update_message_pt','update_message_en','update_cta_pt','update_cta_en','later_cta_pt','later_cta_en'];
+const telemetrySources={
+  users:{label:'Users',path:'/admin/telemetry/users',description:'Users, devices, favorites, alerts and AI Outlook counts.'},
+  devices:{label:'Devices',path:'/admin/telemetry/devices',description:'Registered iOS/watchOS devices with push identifiers masked.'},
+  failures:{label:'Combined failures',path:'/admin/telemetry/failures',description:'Alert and notification failures grouped into one diagnostic stream.'},
+  alertStatus:{label:'Alert due status',path:'/admin/telemetry/alert-status',description:'Live due/skipped evaluation with server and rule-local time.'},
+  alertRuns:{label:'Alert scheduler runs',path:'/admin/telemetry/alert-runs',description:'Scheduler cycles and completion status.'},
+  alertEvents:{label:'Alert events',path:'/admin/telemetry/alert-events',description:'Triggered, skipped and failed alert evaluations.'},
+  notifications:{label:'Notification logs',path:'/admin/telemetry/notifications',description:'Delivery attempts and provider outcomes.'},
+  aiJobs:{label:'AI Outlook jobs',path:'/admin/telemetry/ai-outlook/jobs',description:'Queued, running, succeeded, failed and canceled forecast jobs.'},
+  aiUsage:{label:'AI Outlook usage',path:'/admin/telemetry/ai-outlook/usage',description:'Usage summary by status and ticker.',summary:true},
+  iapEvents:{label:'IAP events',path:'/admin/telemetry/iap-events',description:'StoreKit, paywall, entitlement and subscription telemetry.'},
+  trialAsks:{label:'Trial extension asks',path:'/admin/telemetry/iap-trial-extension-asks',description:'Requests for server-owned trial extensions.'},
+  trials:{label:'Current trials',path:'/admin/telemetry/iap-trials',description:'Active, expired and pending server-owned trials.'},
+  buying:{label:'Buying attempts',path:'/admin/telemetry/iap-buying-attempts',description:'Purchase and restore lifecycle attempts.'},
+  paying:{label:'Paying users',path:'/admin/telemetry/iap-paying-users',description:'Users derived from latest active entitlement telemetry.'},
+  outcomes:{label:'IAP outcomes',path:'/admin/telemetry/iap-outcomes',description:'Success and failure counts by product, status and reason.'},
+  iapSummary:{label:'IAP summary',path:'/admin/telemetry/iap-summary',description:'Recent IAP totals, grouped events and latest records.',summary:true},
+  promotionEvents:{label:'Promotion interactions',path:'/admin/telemetry/promotion-events',description:'Modal/card impressions, closes, copy taps, suppression changes, redeem taps and App Store sheet outcomes.'},
+  promotionSummary:{label:'Promotion metrics',path:'/admin/telemetry/promotion-summary',description:'Promotion funnel totals and impression-based close, copy, redeem-tap and confirmed-redemption rates.',summary:true},
+  appUpdates:{label:'App update interactions',path:'/admin/telemetry/app-update-events',description:'Modal shown, Update, Later and App Store open failure events.'},
+  preferences:{label:'User notification preferences',path:'/users/{user}/notification-preferences',description:'Current delivery and AI Outlook preference for one user.',requiresUser:true,summary:true}
+};
+let promotions=[],selected=null;
+
+function adminToken(){let value=localStorage.getItem(storageKey);if(!value){value=prompt('Enter X-Admin-Token')||'';if(value)localStorage.setItem(storageKey,value)}return value}
+async function request(path,options={},auth=true){const headers={...(options.headers||{})};if(auth)headers['X-Admin-Token']=adminToken();if(options.body)headers['Content-Type']='application/json';const response=await fetch(`${apiPrefix}${path}`,{...options,headers});if(!response.ok){if(response.status===401)localStorage.removeItem(storageKey);throw new Error(`${response.status}: ${await response.text()}`)}if(response.status===204)return null;const contentType=response.headers.get('content-type')||'';return contentType.includes('json')?response.json():response.text()}
+function toast(message,bad=false){const element=document.querySelector('#toast');element.textContent=message;element.style.background=bad?'#802f46':'#21305b';element.style.display='block';setTimeout(()=>element.style.display='none',4200)}
+function text(tag,value){const element=document.createElement(tag);element.textContent=value??'';return element}
+function display(value){if(value===null||value===undefined||value==='')return '—';if(typeof value==='object')return JSON.stringify(value);return String(value)}
+function renderStats(root,items){root.replaceChildren(...items.map(([label,value])=>{const node=document.createElement('div');node.className='stat';node.append(text('strong',display(value)));node.append(text('span',label));return node}))}
+
+function showPage(name){document.querySelectorAll('.page').forEach(page=>page.hidden=page.id!==`page-${name}`);document.querySelectorAll('.nav-item[data-page]').forEach(item=>item.classList.toggle('active',item.dataset.page===name));document.querySelector('#pageTitle').textContent=pageMeta[name][0];document.querySelector('#pageSubtitle').textContent=pageMeta[name][1];if(name==='overview')loadOverview();if(name==='promotions')loadPromotions();if(name==='versions')loadVersionPolicy();if(name==='telemetry')loadTelemetry()}
+document.querySelectorAll('.nav-item[data-page]').forEach(button=>button.onclick=()=>showPage(button.dataset.page));
+document.querySelector('#collapseSidebar').onclick=()=>{const shell=document.querySelector('#shell');shell.classList.toggle('collapsed');localStorage.setItem('trade-alert-admin-sidebar',shell.classList.contains('collapsed')?'collapsed':'expanded')};
+if(localStorage.getItem('trade-alert-admin-sidebar')==='collapsed')document.querySelector('#shell').classList.add('collapsed');
+document.querySelector('#logout').onclick=()=>{localStorage.removeItem(storageKey);toast('Logged out');setTimeout(()=>location.reload(),350)};
+document.querySelector('#changeToken').onclick=()=>{localStorage.removeItem(storageKey);adminToken();showPage(document.querySelector('.nav-item.active').dataset.page)};
+
+async function loadOverview(){try{const [health,ready,flag,iap,ai,updates,promotionMetrics]=await Promise.allSettled([request('/health',{},false),request('/readyz',{},false),request('/admin/features/ai-outlook'),request('/admin/telemetry/iap-summary?hours=24'),request('/admin/telemetry/ai-outlook/usage?hours=24'),request('/admin/telemetry/app-update-events?limit=100'),request('/admin/telemetry/promotion-summary?hours=24')]);const rowData=[['API /health',health],['Dependencies /readyz',ready]];const root=document.querySelector('#healthRows');root.replaceChildren();rowData.forEach(([label,result])=>{const row=document.createElement('div');row.className='health-row';row.append(text('strong',label));const badge=text('span',result.status==='fulfilled'?'Healthy':'Unavailable');badge.className='status '+(result.status==='fulfilled'?'good':'bad');row.append(badge);root.append(row)});const iapValue=iap.status==='fulfilled'?iap.value.total_events:'—';const aiValue=ai.status==='fulfilled'?ai.value.total_jobs:'—';const updateRows=updates.status==='fulfilled'?(updates.value.result||[]):[];const promo=promotionMetrics.status==='fulfilled'?promotionMetrics.value:{};renderStats(document.querySelector('#overviewStats'),[['IAP events · 24h',iapValue],['AI jobs · 24h',aiValue],['Promotion impressions · 24h',promo.impressions??'—'],['Promotion redeem taps · 24h',promo.redeem_taps??'—'],['Update modals',updateRows.filter(x=>x.event_type==='modal_shown').length],['Update CTA taps',updateRows.filter(x=>x.event_type==='update_tapped').length]]);if(flag.status==='fulfilled'){document.querySelector('#aiFlag').checked=!!flag.value.enabled;document.querySelector('#aiFlagMeta').textContent=`Updated ${flag.value.updated_at}`}}catch(error){toast(error.message,true)}}
+document.querySelector('#refreshOverview').onclick=loadOverview;
+document.querySelector('#aiFlag').onchange=async event=>{try{const result=await request('/admin/features/ai-outlook',{method:'PUT',body:JSON.stringify({enabled:event.target.checked})});document.querySelector('#aiFlagMeta').textContent=`Updated ${result.updated_at}`;toast(`AI Outlook ${result.enabled?'enabled':'disabled'}`)}catch(error){event.target.checked=!event.target.checked;toast(error.message,true)}};
+document.querySelector('#runChecks').onclick=async()=>{try{const result=await request('/admin/run-checks',{method:'POST'});toast(`Check cycle completed: ${display(result.status||result.run_id)}`)}catch(error){toast(error.message,true)}};
+
+async function loadPromotions(){try{promotions=await request('/admin/promotions/api');renderPromotions();selected=selected?promotions.find(item=>item.id===selected.id)||promotions[0]:promotions[0];if(selected)selectPromotion(selected.id)}catch(error){toast(error.message,true)}}
+function renderPromotions(){const root=document.querySelector('#promotions');root.replaceChildren();promotions.forEach(promotion=>{const item=document.createElement('div');item.className='promo'+(selected?.id===promotion.id?' active':'');item.append(text('strong',promotion.name));item.append(text('div',`${promotion.enabled?'Enabled':'Disabled'} · ${promotion.available_code_count} available · ${promotion.redeemed_code_count} redeemed`));item.onclick=()=>selectPromotion(promotion.id);root.append(item)})}
+function selectPromotion(id){selected=promotions.find(item=>item.id===id);renderPromotions();document.querySelector('#editor').hidden=false;document.querySelector('#codesCard').hidden=false;document.querySelector('#editorTitle').textContent=selected.name;promotionFields.forEach(key=>{const element=document.querySelector('#'+key);if(element.type==='checkbox')element.checked=!!selected[key];else element.value=selected[key]??''});renderStats(document.querySelector('#stats'),[['Total',selected.code_count],['Available',selected.available_code_count],['Reserved',selected.reserved_code_count],['Redeemed',selected.redeemed_code_count]]);document.querySelector('#updated').textContent=`Updated ${selected.updated_at}`;loadCodes()}
+async function savePromotion(){const body={};promotionFields.forEach(key=>{const element=document.querySelector('#'+key);body[key]=element.type==='checkbox'?element.checked:(element.type==='number'?Number(element.value):element.value)});try{await request(`/admin/promotions/${selected.id}`,{method:'PATCH',body:JSON.stringify(body)});toast('Promotion saved');await loadPromotions()}catch(error){toast(error.message,true)}}
+async function createPromotion(){const slug=prompt('Campaign slug (for example summer-2027)');if(!slug)return;const name=prompt('Campaign name',slug)||slug;const product_id=prompt('App Store product ID','lifetime_unlock')||'lifetime_unlock';const start=new Date(),end=new Date(start.getTime()+30*86400000);try{const created=await request('/admin/promotions',{method:'POST',body:JSON.stringify({slug,name,product_id,starts_at:start.toISOString(),ends_at:end.toISOString()})});selected=created;toast('Campaign created disabled; configure it before enabling');await loadPromotions()}catch(error){toast(error.message,true)}}
+async function importCsv(file){if(!selected||!file)return;const rows=(await file.text()).split(/\r?\n/).filter(Boolean).map(line=>{const comma=line.indexOf(',');const code=(comma<0?line:line.slice(0,comma)).trim();const redeem_url=(comma<0?`https://apps.apple.com/redeem?ctx=offercodes&code=${encodeURIComponent(code)}`:line.slice(comma+1)).trim();return {code,redeem_url}}).filter(row=>row.code);if(!rows.length){toast('The CSV has no codes',true);return}try{const result=await request(`/admin/promotions/${selected.id}/codes/import`,{method:'POST',body:JSON.stringify({codes:rows})});toast(`Imported ${result.imported}; updated ${result.updated}`);await loadPromotions()}catch(error){toast(error.message,true)}finally{document.querySelector('#csvFile').value=''}}
+async function loadCodes(){if(!selected)return;try{const status=document.querySelector('#statusFilter').value;const rows=await request(`/admin/promotions/${selected.id}/codes?limit=2000${status?'&status='+encodeURIComponent(status):''}`);const root=document.querySelector('#codes');root.replaceChildren();rows.forEach(code=>{const tr=document.createElement('tr');[code.code,code.status,code.enabled?'yes':'no',code.reserved_by_user_id,code.redeemed_by_user_id,code.redeemed_at,code.transaction_id].forEach((value,index)=>{const td=document.createElement('td');td.append(index===0?text('code',display(value)):text('span',display(value)));tr.append(td)});const action=document.createElement('td'),button=text('button',code.enabled?'Disable':'Enable');button.className=code.enabled?'danger':'secondary';button.onclick=async()=>{try{await request(`/admin/promotions/${selected.id}/codes/${code.id}`,{method:'PATCH',body:JSON.stringify({enabled:!code.enabled})});await loadPromotions();toast('Code updated')}catch(error){toast(error.message,true)}};action.append(button);tr.append(action);root.append(tr)})}catch(error){toast(error.message,true)}}
+document.querySelector('#save').onclick=savePromotion;document.querySelector('#newPromotion').onclick=createPromotion;document.querySelector('#importCsv').onclick=()=>document.querySelector('#csvFile').click();document.querySelector('#csvFile').onchange=event=>importCsv(event.target.files[0]);document.querySelector('#reloadCodes').onclick=loadCodes;document.querySelector('#statusFilter').onchange=loadCodes;
+
+async function loadVersionPolicy(){try{const policy=await request('/admin/app-update?platform=ios');document.querySelector('#update_enabled').checked=policy.enabled;document.querySelector('#update_mode').value=policy.mode;const mapping={target_version:'target_version',store_url:'store_url',update_title_pt:'title_pt',update_title_en:'title_en',update_message_pt:'message_pt',update_message_en:'message_en',update_cta_pt:'update_cta_pt',update_cta_en:'update_cta_en',later_cta_pt:'later_cta_pt',later_cta_en:'later_cta_en'};Object.entries(mapping).forEach(([id,key])=>document.querySelector('#'+id).value=policy[key]??'');const status=document.querySelector('#versionPolicyStatus');status.textContent=policy.enabled?`${policy.mode.toUpperCase()} · ${policy.target_version}`:'Disabled';status.className='status '+(policy.enabled?(policy.mode==='hard'?'bad':'good'):'');document.querySelector('#versionUpdated').textContent=`Updated ${policy.updated_at}`}catch(error){toast(error.message,true)}}
+document.querySelector('#saveVersionPolicy').onclick=async()=>{const target=document.querySelector('#target_version').value.trim();if(!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(target)){toast('Target version must be valid SemVer, for example 1.3.0',true);return}const body={enabled:document.querySelector('#update_enabled').checked,target_version:target,mode:document.querySelector('#update_mode').value,store_url:document.querySelector('#store_url').value.trim(),title_pt:document.querySelector('#update_title_pt').value,title_en:document.querySelector('#update_title_en').value,message_pt:document.querySelector('#update_message_pt').value,message_en:document.querySelector('#update_message_en').value,update_cta_pt:document.querySelector('#update_cta_pt').value,update_cta_en:document.querySelector('#update_cta_en').value,later_cta_pt:document.querySelector('#later_cta_pt').value,later_cta_en:document.querySelector('#later_cta_en').value};try{await request('/admin/app-update?platform=ios',{method:'PUT',body:JSON.stringify(body)});toast('App update policy saved');await loadVersionPolicy()}catch(error){toast(error.message,true)}};
+
+const sourceSelect=document.querySelector('#telemetrySource');Object.entries(telemetrySources).forEach(([value,source])=>{const option=document.createElement('option');option.value=value;option.textContent=source.label;sourceSelect.append(option)});sourceSelect.onchange=()=>{document.querySelector('#telemetryDescription').textContent=telemetrySources[sourceSelect.value].description};
+function telemetryPath(source){const user=document.querySelector('#telemetryUser').value.trim(),ticker=document.querySelector('#telemetryTicker').value.trim(),product=document.querySelector('#telemetryProduct').value.trim(),promotion=document.querySelector('#telemetryPromotion').value.trim(),environment=document.querySelector('#telemetryEnvironment').value,hours=document.querySelector('#telemetryHours').value;if(source.requiresUser){if(!user)throw new Error('This dataset requires a User ID');return source.path.replace('{user}',encodeURIComponent(user))}const params=new URLSearchParams();params.set('limit','100');if(user)params.set('user_id',user);if(ticker&&['alertStatus','alertEvents','notifications','failures','aiJobs','aiUsage'].includes(sourceSelect.value))params.set('ticker',ticker);if(product&&['iapEvents','buying','paying','outcomes','iapSummary'].includes(sourceSelect.value))params.set('product_id',product);if(promotion&&['promotionEvents','promotionSummary'].includes(sourceSelect.value))params.set('promotion_slug',promotion);if(environment&&['iapEvents','trialAsks','buying','paying','outcomes','iapSummary','promotionEvents','promotionSummary'].includes(sourceSelect.value))params.set('environment',environment);if(['aiUsage','buying','outcomes','iapSummary','promotionEvents','promotionSummary'].includes(sourceSelect.value))params.set('hours',hours);if(source.summary||source.path.includes('/usage'))params.delete('limit');return `${source.path}?${params.toString()}`}
+function renderTable(payload,summary=false){let rows=Array.isArray(payload)?payload:(Array.isArray(payload.result)?payload.result:[payload]);if(summary&&rows.length===1){const object=rows[0],flattened=[];Object.entries(object).forEach(([key,value])=>{if(Array.isArray(value)){value.forEach(item=>flattened.push({section:key,...(typeof item==='object'?item:{value:item})}))}else flattened.push({metric:key,value})});rows=flattened}const head=document.querySelector('#telemetryHead'),body=document.querySelector('#telemetryBody');head.replaceChildren();body.replaceChildren();document.querySelector('#telemetryCount').textContent=`${rows.length} row${rows.length===1?'':'s'}`;if(!rows.length)return;const columns=[...new Set(rows.flatMap(row=>Object.keys(row)))].slice(0,24);const header=document.createElement('tr');columns.forEach(column=>header.append(text('th',column)));head.append(header);rows.forEach(row=>{const tr=document.createElement('tr');columns.forEach(column=>tr.append(text('td',display(row[column]))));body.append(tr)})}
+async function loadTelemetry(){const source=telemetrySources[sourceSelect.value];document.querySelector('#telemetryDescription').textContent=source.description;try{const result=await request(telemetryPath(source));renderTable(result,source.summary)}catch(error){toast(error.message,true)}}
+document.querySelector('#loadTelemetry').onclick=loadTelemetry;
+document.querySelector('#adjustTrial').onclick=async()=>{const user=document.querySelector('#trialUser').value.trim(),days=Number(document.querySelector('#trialDays').value),reason=document.querySelector('#trialReason').value.trim()||null;if(!user||!Number.isInteger(days)||days===0){toast('Enter a user and a non-zero whole number of days',true);return}try{const result=await request(`/admin/telemetry/iap-trials/${encodeURIComponent(user)}/adjust`,{method:'POST',body:JSON.stringify({days,reason})});toast(`Trial adjusted: ${result.status}, ${result.remaining_days} day(s) remaining`);sourceSelect.value='trials';document.querySelector('#telemetryUser').value=user;await loadTelemetry()}catch(error){toast(error.message,true)}};
+
+sourceSelect.value='users';sourceSelect.onchange();loadOverview();
+</script>
+</body>
+</html>"""
+
+
+def render_promotion_panel(version: str) -> str:
+    return PROMOTION_PANEL_HTML.replace("__PANEL_VERSION__", escape(version))

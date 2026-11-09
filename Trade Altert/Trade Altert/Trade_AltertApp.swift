@@ -23,6 +23,10 @@ struct Trade_AltertApp: App {
                 .environment(\.locale, language.locale)
                 .onChange(of: language.code) { _, newLanguage in
                     OneSignalService.shared.setLanguage(newLanguage.rawValue)
+                    Task {
+                        await model.refreshPresentedAppUpdateLanguage()
+                        await purchases.load(userId: model.userId)
+                    }
                 }
         }
     }

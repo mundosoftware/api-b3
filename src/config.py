@@ -2,7 +2,9 @@ from functools import lru_cache
 from pathlib import Path
 
 from dotenv import load_dotenv
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
+
+from src.versioning import detect_release_tag, validate_release_tag
 
 
 load_dotenv("local.env")
@@ -11,6 +13,7 @@ load_dotenv("local.env")
 class Settings(BaseModel):
     app_name: str = "B3 Watch API"
     app_environment: str = "production"
+    panel_release_tag: str = detect_release_tag()
     api_root_path: str = ""
     database_path: str = "database/app.db"
     server_host: str = "0.0.0.0"
@@ -50,6 +53,11 @@ class Settings(BaseModel):
         "Promotions/BLACK_FRIDAY_OfferCodeOneTimeUseCodes_b7536732-6458-4909-92b0-405deb4d10ac.csv"
     )
 
+    @field_validator("panel_release_tag")
+    @classmethod
+    def validate_panel_release_tag(cls, value: str) -> str:
+        return validate_release_tag(value)
+
     @classmethod
     def from_env(cls) -> "Settings":
         import os
@@ -64,6 +72,12 @@ class Settings(BaseModel):
             app_name=os.getenv("APP_NAME", cls.model_fields["app_name"].default),
             app_environment=os.getenv(
                 "APP_ENVIRONMENT", cls.model_fields["app_environment"].default
+            ),
+            panel_release_tag=validate_release_tag(
+                os.getenv(
+                    "PANEL_RELEASE_TAG",
+                    cls.model_fields["panel_release_tag"].default,
+                )
             ),
             api_root_path=os.getenv("API_ROOT_PATH", cls.model_fields["api_root_path"].default),
             database_path=os.getenv("DATABASE_PATH", cls.model_fields["database_path"].default),

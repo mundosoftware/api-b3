@@ -495,25 +495,9 @@ final class AppLanguage: ObservableObject {
             .pt: "%.0f%% de desconto",
             .en: "%.0f%% off"
         ],
-        "promotion.price_authority": [
-            .pt: "Estimativa na moeda da sua App Store. O preço final aparece na confirmação da Apple.",
-            .en: "Estimated in your App Store currency. Apple shows the final price before confirmation."
-        ],
-        "promotion.valid_until": [
-            .pt: "Válida até %@",
-            .en: "Valid until %@"
-        ],
-        "promotion.code.copied_instruction": [
-            .pt: "Ao continuar, o código abaixo será copiado automaticamente. Cole-o na tela segura da App Store.",
-            .en: "When you continue, the code below is copied automatically. Paste it into the secure App Store sheet."
-        ],
         "promotion.code.label": [.pt: "Código promocional", .en: "Promotional code"],
         "promotion.code.copy": [.pt: "Copiar", .en: "Copy"],
         "promotion.code.copied": [.pt: "Copiado", .en: "Copied"],
-        "promotion.native_sheet_notice": [
-            .pt: "O resgate e a compra são concluídos na tela nativa da App Store.",
-            .en: "Redemption and purchase are completed in the native App Store sheet."
-        ],
         "promotion.settings.home_visibility_help": [
             .pt: "Desative esta opção para voltar a mostrar a promoção na tela inicial.",
             .en: "Turn this off to show the promotion on Home again."

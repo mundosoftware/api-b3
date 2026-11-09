@@ -393,12 +393,26 @@ def init_db(settings: Settings | None = None) -> None:
                 title_en TEXT NOT NULL,
                 body_pt TEXT NOT NULL,
                 body_en TEXT NOT NULL,
+                show_body INTEGER NOT NULL DEFAULT 1,
                 cta_pt TEXT NOT NULL,
                 cta_en TEXT NOT NULL,
                 home_suppression_label_pt TEXT NOT NULL,
                 home_suppression_label_en TEXT NOT NULL,
                 plans_notice_pt TEXT NOT NULL,
                 plans_notice_en TEXT NOT NULL,
+                show_plans_notice INTEGER NOT NULL DEFAULT 1,
+                price_authority_pt TEXT NOT NULL DEFAULT 'Estimativa na moeda da sua App Store. A Apple mostra o preço final antes da confirmação.',
+                price_authority_en TEXT NOT NULL DEFAULT 'Estimated in your App Store currency. Apple shows the final price before confirmation.',
+                show_price_authority INTEGER NOT NULL DEFAULT 1,
+                copy_instruction_pt TEXT NOT NULL DEFAULT 'Ao continuar, o código abaixo será copiado automaticamente. Cole-o na tela segura da App Store.',
+                copy_instruction_en TEXT NOT NULL DEFAULT 'When you continue, the code below is copied automatically. Paste it into the secure App Store sheet.',
+                show_copy_instruction INTEGER NOT NULL DEFAULT 1,
+                native_sheet_notice_pt TEXT NOT NULL DEFAULT 'O resgate e a compra são concluídos na tela nativa da App Store.',
+                native_sheet_notice_en TEXT NOT NULL DEFAULT 'Redemption and purchase are completed in the native App Store sheet.',
+                show_native_sheet_notice INTEGER NOT NULL DEFAULT 1,
+                valid_until_pt TEXT NOT NULL DEFAULT 'Válida até [date]',
+                valid_until_en TEXT NOT NULL DEFAULT 'Valid until [date]',
+                show_valid_until INTEGER NOT NULL DEFAULT 1,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
@@ -435,6 +449,70 @@ def init_db(settings: Settings | None = None) -> None:
                 updated_at TEXT NOT NULL,
                 PRIMARY KEY(promotion_id, user_id)
             );
+
+            CREATE TABLE IF NOT EXISTS promotion_interaction_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                promotion_id INTEGER REFERENCES promotions(id) ON DELETE SET NULL,
+                promotion_slug TEXT NOT NULL,
+                user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+                product_id TEXT,
+                event_type TEXT NOT NULL,
+                presentation_context TEXT NOT NULL,
+                platform TEXT,
+                environment TEXT,
+                app_version TEXT,
+                device_model TEXT,
+                device_os TEXT,
+                language TEXT,
+                occurred_at TEXT,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_promotion_interactions_created
+                ON promotion_interaction_events(created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_promotion_interactions_campaign_created
+                ON promotion_interaction_events(promotion_slug, created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_promotion_interactions_user_created
+                ON promotion_interaction_events(user_id, created_at DESC);
+
+            CREATE TABLE IF NOT EXISTS app_update_policies (
+                platform TEXT PRIMARY KEY,
+                enabled INTEGER NOT NULL DEFAULT 0,
+                target_version TEXT NOT NULL,
+                mode TEXT NOT NULL DEFAULT 'soft' CHECK(mode IN ('soft', 'hard')),
+                store_url TEXT NOT NULL,
+                title_pt TEXT NOT NULL,
+                title_en TEXT NOT NULL,
+                message_pt TEXT NOT NULL,
+                message_en TEXT NOT NULL,
+                update_cta_pt TEXT NOT NULL,
+                update_cta_en TEXT NOT NULL,
+                later_cta_pt TEXT NOT NULL,
+                later_cta_en TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS app_update_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+                event_type TEXT NOT NULL CHECK(event_type IN (
+                    'modal_shown', 'update_tapped', 'later_tapped', 'store_open_failed'
+                )),
+                platform TEXT NOT NULL,
+                current_version TEXT NOT NULL,
+                target_version TEXT NOT NULL,
+                mode TEXT NOT NULL CHECK(mode IN ('soft', 'hard')),
+                environment TEXT,
+                language TEXT,
+                occurred_at TEXT,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_app_update_events_created
+                ON app_update_events(created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_app_update_events_user_created
+                ON app_update_events(user_id, created_at DESC);
             """
         )
         _ensure_ai_outlook_jobs_status_allows_canceled(db)
@@ -457,7 +535,59 @@ def init_db(settings: Settings | None = None) -> None:
             "ai_outlook_enabled",
             "INTEGER NOT NULL DEFAULT 0",
         )
+        promotion_columns = {
+            "show_body": "INTEGER NOT NULL DEFAULT 1",
+            "show_plans_notice": "INTEGER NOT NULL DEFAULT 1",
+            "price_authority_pt": (
+                "TEXT NOT NULL DEFAULT 'Estimativa na moeda da sua App Store. "
+                "A Apple mostra o preço final antes da confirmação.'"
+            ),
+            "price_authority_en": (
+                "TEXT NOT NULL DEFAULT 'Estimated in your App Store currency. "
+                "Apple shows the final price before confirmation.'"
+            ),
+            "show_price_authority": "INTEGER NOT NULL DEFAULT 1",
+            "copy_instruction_pt": (
+                "TEXT NOT NULL DEFAULT 'Ao continuar, o código abaixo será copiado automaticamente. "
+                "Cole-o na tela segura da App Store.'"
+            ),
+            "copy_instruction_en": (
+                "TEXT NOT NULL DEFAULT 'When you continue, the code below is copied automatically. "
+                "Paste it into the secure App Store sheet.'"
+            ),
+            "show_copy_instruction": "INTEGER NOT NULL DEFAULT 1",
+            "native_sheet_notice_pt": (
+                "TEXT NOT NULL DEFAULT 'O resgate e a compra são concluídos na tela nativa da App Store.'"
+            ),
+            "native_sheet_notice_en": (
+                "TEXT NOT NULL DEFAULT 'Redemption and purchase are completed in the native App Store sheet.'"
+            ),
+            "show_native_sheet_notice": "INTEGER NOT NULL DEFAULT 1",
+            "valid_until_pt": "TEXT NOT NULL DEFAULT 'Válida até [date]'",
+            "valid_until_en": "TEXT NOT NULL DEFAULT 'Valid until [date]'",
+            "show_valid_until": "INTEGER NOT NULL DEFAULT 1",
+        }
+        for column, definition in promotion_columns.items():
+            _ensure_column(db, "promotions", column, definition)
         now = utc_now_iso()
+        db.execute(
+            """
+            INSERT INTO app_update_policies(
+                platform, enabled, target_version, mode, store_url,
+                title_pt, title_en, message_pt, message_en,
+                update_cta_pt, update_cta_en, later_cta_pt, later_cta_en,
+                created_at, updated_at
+            ) VALUES (
+                'ios', 0, '1.2.0', 'soft', 'https://apps.apple.com',
+                'Atualização disponível', 'Update available',
+                'Uma nova versão do Trade Alert está disponível na App Store.',
+                'A new version of Trade Alert is available on the App Store.',
+                'Atualizar agora', 'Update now', 'Mais tarde', 'Later', ?, ?
+            )
+            ON CONFLICT(platform) DO NOTHING
+            """,
+            (now, now),
+        )
         db.execute(
             """
             INSERT INTO promotions(

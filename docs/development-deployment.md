@@ -35,7 +35,7 @@ Useful URLs:
 - API: `https://<VPS_HOST>/dev`
 - Health: `https://<VPS_HOST>/dev/health`
 - OpenAPI: `https://<VPS_HOST>/dev/docs`
-- Promotions: `https://<VPS_HOST>/dev/admin/promotions`
+- Admin panel: `https://<VPS_HOST>/dev/admin`
 
 ## iOS Debug switch
 

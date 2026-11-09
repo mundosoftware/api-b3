@@ -124,6 +124,13 @@ ENABLE_REVERSE_PROXY="${ENABLE_REVERSE_PROXY:-auto}"
 DATABASE_PATH="${DATABASE_PATH:-database/app.db}"
 DEFAULT_TIMEZONE="${DEFAULT_TIMEZONE:-America/Sao_Paulo}"
 PROMOTION_CODES_CSV_PATH="${PROMOTION_CODES_CSV_PATH:-Promotions/BLACK_FRIDAY_OfferCodeOneTimeUseCodes_b7536732-6458-4909-92b0-405deb4d10ac.csv}"
+DETECTED_PANEL_RELEASE_TAG="$(git -C "${ROOT_DIR}" describe --tags --match 'RELEASE_*' --abbrev=0 HEAD 2>/dev/null || true)"
+PANEL_RELEASE_TAG="${DETECTED_PANEL_RELEASE_TAG:-${PANEL_RELEASE_TAG:-}}"
+if [[ ! "${PANEL_RELEASE_TAG}" =~ ^RELEASE_(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+  echo "Could not resolve a release tag matching RELEASE_1.2.0 from the current commit." >&2
+  exit 1
+fi
+export PANEL_RELEASE_TAG
 QUOTE_CACHE_TTL_SECONDS="${QUOTE_CACHE_TTL_SECONDS:-60}"
 CHECK_LOOP_SECONDS="${CHECK_LOOP_SECONDS:-30}"
 CHECK_LOOP_ENABLED="${CHECK_LOOP_ENABLED:-true}"
@@ -462,6 +469,7 @@ run_local() {
 
   echo "Local API URL: http://${LOCAL_SERVER_HOST}:${LOCAL_SERVER_PORT}"
   echo "Docs URL: http://${LOCAL_SERVER_HOST}:${LOCAL_SERVER_PORT}/docs"
+  echo "Admin panel URL: http://${LOCAL_SERVER_HOST}:${LOCAL_SERVER_PORT}/admin"
 
   if [[ "${NO_START}" == "true" ]]; then
     echo "Local setup finished. Start later with:"
@@ -505,13 +513,10 @@ if truthy "${ONESIGNAL_ENABLED}"; then
   : "${ONESIGNAL_WATCH_REST_API_KEY:?ONESIGNAL_WATCH_REST_API_KEY is required for standalone watchOS notifications}"
 fi
 
-if [[ "${PROMOTION_CODES_CSV_PATH}" == /* ]]; then
-  echo "PROMOTION_CODES_CSV_PATH must be relative to the project root for deployment sync" >&2
-  exit 1
-fi
-if [[ ! -f "${ROOT_DIR}/${PROMOTION_CODES_CSV_PATH}" ]]; then
-  echo "Promotion codes CSV not found: ${ROOT_DIR}/${PROMOTION_CODES_CSV_PATH}" >&2
-  exit 1
+if [[ "${PROMOTION_CODES_CSV_PATH}" != /* && -f "${ROOT_DIR}/${PROMOTION_CODES_CSV_PATH}" ]]; then
+  echo "Promotion codes CSV found locally; deployment leaves it unmanaged."
+else
+  echo "Promotion codes CSV is not required for deployment; import codes later in the admin panel."
 fi
 
 SERVICE_BIND_HOST="${SERVER_HOST}"
@@ -674,18 +679,18 @@ check_public_universal_notifier() {
 
 verify_remote_ai_outlook_source() {
   echo "Verifying deployed feature route source"
-  if remote "grep -q 'features/ai-outlook' '${APP_DIR}/src/application.py' && grep -q 'admin/features/ai-outlook' '${APP_DIR}/src/application.py' && grep -q 'admin/promotions' '${APP_DIR}/src/application.py'"; then
+  if remote "grep -q 'features/ai-outlook' '${APP_DIR}/src/application.py' && grep -q 'admin/features/ai-outlook' '${APP_DIR}/src/application.py' && grep -q 'admin_panel' '${APP_DIR}/src/application.py' && grep -q 'admin/promotions' '${APP_DIR}/src/application.py' && grep -q 'admin/app-update' '${APP_DIR}/src/application.py'"; then
     return 0
   fi
 
-  echo "The deployed source at ${APP_DIR} does not contain the required AI Outlook and promotions routes." >&2
+  echo "The deployed source at ${APP_DIR} does not contain the required AI Outlook, promotions, and app-update routes." >&2
   print_remote_diagnostics
   return 1
 }
 
 check_internal_ai_outlook_routes() {
   echo "Checking feature routes inside VPS"
-  if remote "curl -fsS --max-time 5 'http://127.0.0.1:${SERVER_PORT}/features/ai-outlook' >/dev/null && curl -fsS --max-time 5 --header 'X-Admin-Token: ${ADMIN_TOKEN}' 'http://127.0.0.1:${SERVER_PORT}/admin/features/ai-outlook' >/dev/null && curl -fsS --max-time 5 --header 'X-Admin-Token: ${ADMIN_TOKEN}' 'http://127.0.0.1:${SERVER_PORT}/admin/promotions/api' >/dev/null"; then
+  if remote "curl -fsS --max-time 5 'http://127.0.0.1:${SERVER_PORT}/features/ai-outlook' >/dev/null && curl -fsS --max-time 5 'http://127.0.0.1:${SERVER_PORT}/admin' >/dev/null && curl -fsS --max-time 5 --header 'X-Admin-Token: ${ADMIN_TOKEN}' 'http://127.0.0.1:${SERVER_PORT}/admin/features/ai-outlook' >/dev/null && curl -fsS --max-time 5 --header 'X-Admin-Token: ${ADMIN_TOKEN}' 'http://127.0.0.1:${SERVER_PORT}/admin/promotions/api' >/dev/null && curl -fsS --max-time 5 'http://127.0.0.1:${SERVER_PORT}/app-update?current_version=1.2.0&platform=ios&language=en' >/dev/null && curl -fsS --max-time 5 --header 'X-Admin-Token: ${ADMIN_TOKEN}' 'http://127.0.0.1:${SERVER_PORT}/admin/app-update?platform=ios' >/dev/null"; then
     return 0
   fi
 
@@ -705,6 +710,19 @@ check_public_ai_outlook_routes() {
 
   echo "The AI Outlook route works internally, but the public feature URL is not reachable from this machine." >&2
   echo "Check nginx, TLS, and the public API base URL used by Postman/iOS." >&2
+  print_remote_diagnostics
+  return 1
+}
+
+check_public_admin_panel() {
+  local public_admin_url
+  public_admin_url="$(public_url_for_path "/admin")"
+  echo "Checking public admin panel URL: ${public_admin_url}"
+  if curl -fsS --max-time 8 "${public_admin_url}" >/dev/null; then
+    return 0
+  fi
+
+  echo "The API is reachable, but the public admin panel URL is not reachable." >&2
   print_remote_diagnostics
   return 1
 }
@@ -1102,6 +1120,7 @@ rsync -az --delete \
   --exclude ".deps/Kronos" \
   --exclude ".deps/Universal-Notifier/.env.local" \
   --exclude ".deps/Universal-Notifier/.data" \
+  --exclude "${PROMOTION_CODES_CSV_PATH}" \
   --exclude "database" \
   --exclude "venv" \
   --exclude "__pycache__" \
@@ -1115,6 +1134,7 @@ CLEANUP_FILES+=("${TMP_ENV}")
 {
   write_env_line "APP_NAME" "${APP_NAME:-B3 Watch API}"
   write_env_line "APP_ENVIRONMENT" "${DEPLOYMENT_ENVIRONMENT}"
+  write_env_line "PANEL_RELEASE_TAG" "${PANEL_RELEASE_TAG}"
   write_env_line "API_ROOT_PATH" "${API_ROOT_PATH}"
   write_env_line "DATABASE_PATH" "${DATABASE_PATH}"
   write_env_line "SERVER_HOST" "${SERVICE_BIND_HOST}"
@@ -1216,7 +1236,9 @@ fi
 check_public_health
 check_public_universal_notifier
 check_public_ai_outlook_routes
+check_public_admin_panel
 check_production_health_for_dev_deploy
 
 echo "Deployment finished."
 echo "Health URL: $(public_health_url)"
+echo "Admin panel URL: $(public_url_for_path "/admin")"

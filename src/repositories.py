@@ -1,4 +1,5 @@
 import json
+import re
 import sqlite3
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
@@ -8,6 +9,8 @@ from uuid import uuid4
 from src.config import Settings, get_settings
 from src.database import Database, normalize_ticker, parse_iso, utc_now_iso
 from src.models import (
+    AppUpdatePolicyUpdateRequest,
+    AppUpdateTelemetryRequest,
     AlertRuleCreateRequest,
     AlertRuleOut,
     AlertRuleUpdateRequest,
@@ -16,8 +19,57 @@ from src.models import (
     PromotionAdminCreateRequest,
     PromotionAdminUpdateRequest,
     PromotionCodeImportRequest,
+    PromotionInteractionRequest,
     PromotionRedemptionRequest,
 )
+
+
+SEMANTIC_VERSION_PATTERN = re.compile(
+    r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)"
+    r"(?:-((?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)"
+    r"(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*))?"
+    r"(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$"
+)
+
+
+def compare_semantic_versions(left: str, right: str) -> int:
+    """Return -1, 0 or 1 using SemVer precedence (build metadata is ignored)."""
+
+    def parse(value: str) -> tuple[tuple[int, int, int], list[str] | None]:
+        match = SEMANTIC_VERSION_PATTERN.fullmatch(value.strip())
+        if match is None:
+            raise ValueError(f"invalid semantic version: {value}")
+        core = tuple(int(match.group(index)) for index in range(1, 4))
+        prerelease = match.group(4)
+        return core, prerelease.split(".") if prerelease else None
+
+    left_core, left_pre = parse(left)
+    right_core, right_pre = parse(right)
+    if left_core != right_core:
+        return -1 if left_core < right_core else 1
+    if left_pre is None or right_pre is None:
+        if left_pre == right_pre:
+            return 0
+        return 1 if left_pre is None else -1
+    for left_part, right_part in zip(left_pre, right_pre, strict=False):
+        if left_part == right_part:
+            continue
+        left_numeric = left_part.isdigit()
+        right_numeric = right_part.isdigit()
+        if left_numeric and right_numeric:
+            return -1 if int(left_part) < int(right_part) else 1
+        if left_numeric != right_numeric:
+            return -1 if left_numeric else 1
+        return -1 if left_part < right_part else 1
+    if len(left_pre) == len(right_pre):
+        return 0
+    return -1 if len(left_pre) < len(right_pre) else 1
+
+
+def app_update_policy_from_row(row: sqlite3.Row) -> dict[str, Any]:
+    result = dict(row)
+    result["enabled"] = bool(result["enabled"])
+    return result
 
 
 def company_from_row(row: sqlite3.Row) -> dict[str, Any]:
@@ -261,6 +313,155 @@ class Repository:
             "ai_outlook",
             self.settings.ai_outlook_global_enabled,
         )["enabled"]
+
+    def get_app_update_policy(self, platform: str = "ios") -> dict[str, Any]:
+        with self.database.connect() as db:
+            row = db.execute(
+                "SELECT * FROM app_update_policies WHERE platform = ?",
+                (platform.lower(),),
+            ).fetchone()
+            if row is None:
+                raise ValueError("app update policy not found")
+            return app_update_policy_from_row(row)
+
+    def update_app_update_policy(
+        self,
+        request: AppUpdatePolicyUpdateRequest,
+        platform: str = "ios",
+    ) -> dict[str, Any]:
+        compare_semantic_versions(request.target_version, request.target_version)
+        payload = request.model_dump()
+        now = utc_now_iso()
+        fields = (
+            "enabled",
+            "target_version",
+            "mode",
+            "store_url",
+            "title_pt",
+            "title_en",
+            "message_pt",
+            "message_en",
+            "update_cta_pt",
+            "update_cta_en",
+            "later_cta_pt",
+            "later_cta_en",
+        )
+        values = [
+            int(payload[name]) if name == "enabled" else payload[name]
+            for name in fields
+        ]
+        assignments = ", ".join(f"{name} = ?" for name in fields)
+        with self.database.connect() as db:
+            cursor = db.execute(
+                f"""
+                UPDATE app_update_policies
+                SET {assignments}, updated_at = ?
+                WHERE platform = ?
+                """,
+                (*values, now, platform.lower()),
+            )
+            if cursor.rowcount == 0:
+                raise ValueError("app update policy not found")
+        return self.get_app_update_policy(platform)
+
+    def app_update_decision(
+        self,
+        current_version: str,
+        language: str = "en",
+        platform: str = "ios",
+    ) -> dict[str, Any]:
+        policy = self.get_app_update_policy(platform)
+        suffix = "pt" if language.lower().startswith("pt") else "en"
+        reason = "disabled"
+        available = False
+        if policy["enabled"]:
+            try:
+                available = compare_semantic_versions(
+                    current_version, policy["target_version"]
+                ) < 0
+                reason = "update_available" if available else "up_to_date"
+            except ValueError:
+                reason = "invalid_current_version"
+        return {
+            "available": available,
+            "reason": reason,
+            "platform": policy["platform"],
+            "current_version": current_version,
+            "target_version": policy["target_version"],
+            "mode": policy["mode"],
+            "store_url": policy["store_url"],
+            "text": {
+                "title": policy[f"title_{suffix}"],
+                "message": policy[f"message_{suffix}"],
+                "update_cta": policy[f"update_cta_{suffix}"],
+                "later_cta": policy[f"later_cta_{suffix}"],
+            },
+        }
+
+    def record_app_update_event(
+        self,
+        user_id: str,
+        request: AppUpdateTelemetryRequest,
+    ) -> dict[str, Any]:
+        self.upsert_user(user_id)
+        payload = request.model_dump()
+        now = utc_now_iso()
+        with self.database.connect() as db:
+            cursor = db.execute(
+                """
+                INSERT INTO app_update_events(
+                    user_id, event_type, platform, current_version, target_version,
+                    mode, environment, language, occurred_at, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    user_id,
+                    payload["event_type"],
+                    payload["platform"],
+                    payload["current_version"],
+                    payload["target_version"],
+                    payload["mode"],
+                    payload["environment"],
+                    payload["language"],
+                    payload["occurred_at"],
+                    now,
+                ),
+            )
+            row = db.execute(
+                "SELECT * FROM app_update_events WHERE id = ?", (cursor.lastrowid,)
+            ).fetchone()
+            return dict(row)
+
+    def list_app_update_events(
+        self,
+        limit: int = 100,
+        user_id: str | None = None,
+        event_type: str | None = None,
+        platform: str | None = None,
+    ) -> list[dict[str, Any]]:
+        conditions: list[str] = []
+        params: list[Any] = []
+        if user_id:
+            conditions.append("user_id = ?")
+            params.append(user_id)
+        if event_type:
+            conditions.append("event_type = ?")
+            params.append(event_type)
+        if platform:
+            conditions.append("platform = ?")
+            params.append(platform)
+        where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        with self.database.connect() as db:
+            rows = db.execute(
+                f"""
+                SELECT * FROM app_update_events
+                {where}
+                ORDER BY created_at DESC, id DESC
+                LIMIT ?
+                """,
+                (*params, max(1, min(limit, 500))),
+            ).fetchall()
+            return [dict(row) for row in rows]
 
     def get_iap_trial(self, user_id: str, now: datetime | None = None) -> dict[str, Any]:
         checked_at = self._coerce_utc(now or datetime.now(UTC)).replace(microsecond=0)
@@ -515,11 +716,29 @@ class Repository:
                     "text": {
                         "title": promotion[f"title_{suffix}"],
                         "body": promotion[f"body_{suffix}"],
+                        "show_body": bool(promotion["show_body"]),
                         "cta_label": promotion[f"cta_{suffix}"],
                         "home_suppression_label": promotion[
                             f"home_suppression_label_{suffix}"
                         ],
                         "plans_notice": promotion[f"plans_notice_{suffix}"],
+                        "show_plans_notice": bool(promotion["show_plans_notice"]),
+                        "price_authority": promotion[f"price_authority_{suffix}"],
+                        "show_price_authority": bool(
+                            promotion["show_price_authority"]
+                        ),
+                        "copy_instruction": promotion[f"copy_instruction_{suffix}"],
+                        "show_copy_instruction": bool(
+                            promotion["show_copy_instruction"]
+                        ),
+                        "native_sheet_notice": promotion[
+                            f"native_sheet_notice_{suffix}"
+                        ],
+                        "show_native_sheet_notice": bool(
+                            promotion["show_native_sheet_notice"]
+                        ),
+                        "valid_until": promotion[f"valid_until_{suffix}"],
+                        "show_valid_until": bool(promotion["show_valid_until"]),
                     },
                 },
             }
@@ -560,6 +779,172 @@ class Repository:
                 """,
                 (promotion["id"], user_id, int(hidden), now),
             )
+
+    def record_promotion_interaction(
+        self,
+        user_id: str,
+        slug: str,
+        request: PromotionInteractionRequest,
+    ) -> dict[str, Any]:
+        self.upsert_user(user_id)
+        now = utc_now_iso()
+        payload = request.model_dump()
+        environment = (
+            payload["environment"].strip().lower()
+            if payload["environment"]
+            else None
+        )
+        with self.database.connect() as db:
+            promotion = db.execute(
+                "SELECT id, slug, product_id FROM promotions WHERE slug = ?", (slug,)
+            ).fetchone()
+            if promotion is None:
+                raise ValueError("promotion not found")
+            db.execute(
+                """
+                INSERT INTO promotion_interaction_events(
+                    promotion_id, promotion_slug, user_id, product_id, event_type,
+                    presentation_context, platform, environment, app_version,
+                    device_model, device_os, language, occurred_at, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    promotion["id"],
+                    promotion["slug"],
+                    user_id,
+                    promotion["product_id"],
+                    payload["event_type"],
+                    payload["presentation_context"],
+                    payload["platform"],
+                    environment,
+                    payload["app_version"],
+                    payload["device_model"],
+                    payload["device_os"],
+                    payload["language"],
+                    payload["occurred_at"],
+                    now,
+                ),
+            )
+            row = db.execute(
+                "SELECT * FROM promotion_interaction_events WHERE id = last_insert_rowid()"
+            ).fetchone()
+            return dict(row)
+
+    def list_promotion_interactions(
+        self,
+        limit: int = 100,
+        user_id: str | None = None,
+        promotion_slug: str | None = None,
+        event_type: str | None = None,
+        presentation_context: str | None = None,
+        environment: str | None = None,
+        hours: int | None = None,
+    ) -> list[dict[str, Any]]:
+        limit = max(1, min(limit, 500))
+        conditions: list[str] = []
+        params: list[Any] = []
+        filters = {
+            "user_id": user_id,
+            "promotion_slug": promotion_slug,
+            "event_type": event_type,
+            "presentation_context": presentation_context,
+            "environment": environment,
+        }
+        for column, value in filters.items():
+            if value:
+                conditions.append(f"{column} = ?")
+                params.append(value)
+        if hours is not None:
+            hours = max(1, min(hours, 8760))
+            since = datetime.now(UTC).replace(microsecond=0) - timedelta(hours=hours)
+            conditions.append("created_at >= ?")
+            params.append(since.isoformat())
+        where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        with self.database.connect() as db:
+            rows = db.execute(
+                f"""
+                SELECT * FROM promotion_interaction_events
+                {where}
+                ORDER BY created_at DESC, id DESC
+                LIMIT ?
+                """,
+                (*params, limit),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    def summarize_promotion_interactions(
+        self,
+        hours: int = 24,
+        promotion_slug: str | None = None,
+        user_id: str | None = None,
+        environment: str | None = None,
+    ) -> dict[str, Any]:
+        hours = max(1, min(hours, 8760))
+        since = datetime.now(UTC).replace(microsecond=0) - timedelta(hours=hours)
+        conditions = ["created_at >= ?"]
+        params: list[Any] = [since.isoformat()]
+        for column, value in (
+            ("promotion_slug", promotion_slug),
+            ("user_id", user_id),
+            ("environment", environment),
+        ):
+            if value:
+                conditions.append(f"{column} = ?")
+                params.append(value)
+        where = f"WHERE {' AND '.join(conditions)}"
+        with self.database.connect() as db:
+            totals = db.execute(
+                f"""
+                SELECT
+                    COUNT(*) AS total_events,
+                    COUNT(DISTINCT user_id) AS unique_users,
+                    SUM(CASE WHEN event_type IN ('modal_shown', 'paywall_card_shown') THEN 1 ELSE 0 END) AS impressions,
+                    SUM(CASE WHEN event_type = 'modal_closed' THEN 1 ELSE 0 END) AS modal_closes,
+                    SUM(CASE WHEN event_type = 'copy_code_tapped' THEN 1 ELSE 0 END) AS copy_taps,
+                    SUM(CASE WHEN event_type = 'dont_show_again_enabled' THEN 1 ELSE 0 END) AS suppression_enables,
+                    SUM(CASE WHEN event_type = 'redeem_offer_tapped' THEN 1 ELSE 0 END) AS redeem_taps,
+                    SUM(CASE WHEN event_type = 'redemption_confirmed' THEN 1 ELSE 0 END) AS confirmed_redemptions
+                FROM promotion_interaction_events
+                {where}
+                """,
+                params,
+            ).fetchone()
+            by_event_type = db.execute(
+                f"""
+                SELECT event_type AS name, COUNT(*) AS count
+                FROM promotion_interaction_events
+                {where}
+                GROUP BY event_type ORDER BY count DESC, event_type
+                """,
+                params,
+            ).fetchall()
+            by_context = db.execute(
+                f"""
+                SELECT presentation_context AS name, COUNT(*) AS count
+                FROM promotion_interaction_events
+                {where}
+                GROUP BY presentation_context ORDER BY count DESC, presentation_context
+                """,
+                params,
+            ).fetchall()
+
+        values = {key: int(totals[key] or 0) for key in totals.keys()}
+        impressions = values["impressions"]
+
+        def rate(count: int) -> float:
+            return round(count / impressions, 4) if impressions else 0.0
+
+        return {
+            "window_hours": hours,
+            "promotion_slug": promotion_slug,
+            **values,
+            "close_rate": rate(values["modal_closes"]),
+            "copy_rate": rate(values["copy_taps"]),
+            "redeem_tap_rate": rate(values["redeem_taps"]),
+            "confirmed_redemption_rate": rate(values["confirmed_redemptions"]),
+            "by_event_type": [dict(row) for row in by_event_type],
+            "by_context": [dict(row) for row in by_context],
+        }
 
     def record_promotion_redemption(
         self,
@@ -641,6 +1026,16 @@ class Repository:
                     occurred_at=now,
                 ),
             )
+            self.record_promotion_interaction(
+                user_id,
+                slug,
+                PromotionInteractionRequest(
+                    event_type="redemption_confirmed",
+                    presentation_context="unknown",
+                    environment=request.environment,
+                    occurred_at=now,
+                ),
+            )
         return {
             "recorded": True,
             "promotion_slug": slug,
@@ -676,7 +1071,11 @@ class Repository:
         ends_at = self._coerce_utc(parse_iso(payload["ends_at"]))
         if starts_at >= ends_at:
             raise ValueError("promotion end must be after its start")
-        for key in ("enabled", "show_on_home", "allow_home_suppression", "show_on_paywall"):
+        for key in (
+            "enabled", "show_on_home", "allow_home_suppression", "show_on_paywall",
+            "show_body", "show_plans_notice", "show_price_authority",
+            "show_copy_instruction", "show_native_sheet_notice", "show_valid_until",
+        ):
             payload[key] = int(payload[key])
         now = utc_now_iso()
         payload["created_at"] = now
@@ -766,12 +1165,20 @@ class Repository:
             "starts_at", "ends_at", "show_on_home", "allow_home_suppression",
             "show_on_paywall", "title_pt", "title_en", "body_pt", "body_en", "cta_pt",
             "cta_en", "home_suppression_label_pt", "home_suppression_label_en",
-            "plans_notice_pt", "plans_notice_en",
+            "plans_notice_pt", "plans_notice_en", "show_body", "show_plans_notice",
+            "price_authority_pt", "price_authority_en", "show_price_authority",
+            "copy_instruction_pt", "copy_instruction_en", "show_copy_instruction",
+            "native_sheet_notice_pt", "native_sheet_notice_en", "show_native_sheet_notice",
+            "valid_until_pt", "valid_until_en", "show_valid_until",
         }
         unknown = set(payload) - allowed
         if unknown:
             raise ValueError("unsupported promotion fields")
-        for key in ("enabled", "show_on_home", "allow_home_suppression", "show_on_paywall"):
+        for key in (
+            "enabled", "show_on_home", "allow_home_suppression", "show_on_paywall",
+            "show_body", "show_plans_notice", "show_price_authority",
+            "show_copy_instruction", "show_native_sheet_notice", "show_valid_until",
+        ):
             if key in payload:
                 payload[key] = int(payload[key])
         payload["updated_at"] = utc_now_iso()
@@ -829,7 +1236,11 @@ class Repository:
 
     @staticmethod
     def _promotion_admin_row(promotion: dict[str, Any]) -> dict[str, Any]:
-        for key in ("enabled", "show_on_home", "allow_home_suppression", "show_on_paywall"):
+        for key in (
+            "enabled", "show_on_home", "allow_home_suppression", "show_on_paywall",
+            "show_body", "show_plans_notice", "show_price_authority",
+            "show_copy_instruction", "show_native_sheet_notice", "show_valid_until",
+        ):
             promotion[key] = bool(promotion[key])
         for key in (
             "code_count", "available_code_count", "reserved_code_count", "redeemed_code_count"

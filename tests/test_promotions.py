@@ -14,6 +14,7 @@ from src.models import (
     PromotionAdminUpdateRequest,
     PromotionCodeImportItem,
     PromotionCodeImportRequest,
+    PromotionInteractionRequest,
     PromotionRedemptionRequest,
 )
 from src.repositories import Repository
@@ -127,18 +128,133 @@ class PromotionsTest(unittest.TestCase):
         self.assertFalse(disabled["enabled"])
 
         with TestClient(create_app(self.settings)) as client:
-            self.assertEqual(client.get("/admin/promotions").status_code, 200)
+            self.assertEqual(client.get("/admin").status_code, 200)
+            legacy = client.get("/admin/promotions", follow_redirects=False)
+            self.assertEqual(legacy.status_code, 308)
+            self.assertEqual(legacy.headers["location"], "/admin")
             self.assertEqual(client.get("/admin/promotions/api").status_code, 401)
             response = client.get(
                 "/admin/promotions/api", headers={"X-Admin-Token": "secret"}
             )
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response.json()[0]["slug"], "black-friday-2026")
+            panel = client.get("/admin")
+            self.assertIn('id="show_copy_instruction"', panel.text)
+            self.assertIn("/admin/telemetry/promotion-summary", panel.text)
+            self.assertIn(
+                "window.location.pathname.replace(/\\/admin\\/?$/,'')",
+                panel.text,
+            )
             codes_response = client.get(
                 f"/admin/promotions/{promotion['id']}/codes",
                 headers={"X-Admin-Token": "secret"},
             )
             self.assertEqual(codes_response.headers["cache-control"], "no-store, private")
+
+    def test_admin_panel_preserves_development_url_prefix(self):
+        development_settings = self.settings.model_copy(
+            update={"api_root_path": "/dev"}
+        )
+        with TestClient(create_app(development_settings)) as client:
+            self.assertEqual(client.get("/admin").status_code, 200)
+            legacy = client.get("/admin/promotions", follow_redirects=False)
+            self.assertEqual(legacy.status_code, 308)
+            self.assertEqual(legacy.headers["location"], "/dev/admin")
+
+    def test_admin_controls_localized_promotion_copy_and_visibility(self):
+        promotion = self.repository.list_promotions_for_admin()[0]
+        self.repository.update_promotion_for_admin(
+            promotion["id"],
+            PromotionAdminUpdateRequest(
+                body_en="Custom campaign body",
+                show_body=False,
+                plans_notice_en="Custom plans notice",
+                show_plans_notice=False,
+                price_authority_en="Custom price disclaimer",
+                show_price_authority=False,
+                copy_instruction_en="Custom copy instruction",
+                show_copy_instruction=False,
+                native_sheet_notice_en="Custom native sheet notice",
+                show_native_sheet_notice=False,
+                valid_until_en="Available through [date]",
+                show_valid_until=False,
+            ),
+        )
+
+        offer = self.repository.promotion_availability(
+            "copy-user",
+            language="en",
+            now=datetime(2026, 11, 7, 12, tzinfo=UTC),
+        )["promotion"]
+
+        self.assertEqual(offer["text"]["body"], "Custom campaign body")
+        self.assertFalse(offer["text"]["show_body"])
+        self.assertEqual(offer["text"]["valid_until"], "Available through [date]")
+        self.assertFalse(offer["text"]["show_valid_until"])
+        self.assertEqual(
+            offer["text"]["copy_instruction"], "Custom copy instruction"
+        )
+        self.assertFalse(offer["text"]["show_copy_instruction"])
+
+        with TestClient(create_app(self.settings)) as client:
+            response = client.get(
+                "/users/api-copy-user/promotions/available",
+                params={"language": "en"},
+            )
+            self.assertEqual(response.status_code, 200)
+            self.assertFalse(response.json()["promotion"]["text"]["show_body"])
+            self.assertEqual(
+                response.json()["promotion"]["text"]["price_authority"],
+                "Custom price disclaimer",
+            )
+
+    def test_promotion_interactions_have_raw_and_summary_telemetry(self):
+        offer = self.repository.promotion_availability(
+            "telemetry-user", now=datetime(2026, 11, 7, 12, tzinfo=UTC)
+        )["promotion"]
+        for event_type in ("modal_shown", "copy_code_tapped", "redeem_offer_tapped"):
+            self.repository.record_promotion_interaction(
+                "telemetry-user",
+                offer["slug"],
+                PromotionInteractionRequest(
+                    event_type=event_type,
+                    presentation_context="home",
+                    environment="development",
+                ),
+            )
+
+        rows = self.repository.list_promotion_interactions(
+            promotion_slug=offer["slug"], environment="development"
+        )
+        summary = self.repository.summarize_promotion_interactions(
+            hours=24,
+            promotion_slug=offer["slug"],
+            environment="development",
+        )
+
+        self.assertEqual(len(rows), 3)
+        self.assertEqual(summary["impressions"], 1)
+        self.assertEqual(summary["copy_taps"], 1)
+        self.assertEqual(summary["redeem_taps"], 1)
+        self.assertEqual(summary["copy_rate"], 1.0)
+
+        with TestClient(create_app(self.settings)) as client:
+            posted = client.post(
+                f"/users/api-telemetry/promotions/{offer['slug']}/telemetry",
+                json={
+                    "event_type": "modal_closed",
+                    "presentation_context": "home",
+                    "environment": "development",
+                },
+            )
+            self.assertEqual(posted.status_code, 201)
+            response = client.get(
+                "/admin/telemetry/promotion-events",
+                params={"promotion_slug": offer["slug"]},
+                headers={"X-Admin-Token": "secret"},
+            )
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json()["result"][0]["event_type"], "modal_closed")
 
     def test_admin_can_create_reusable_campaign_and_import_codes(self):
         created = self.repository.create_promotion_for_admin(

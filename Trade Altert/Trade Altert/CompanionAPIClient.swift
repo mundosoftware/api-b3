@@ -68,6 +68,32 @@ actor CompanionAPIClient {
         )
     }
 
+    func appUpdate(
+        currentVersion: String,
+        language: String
+    ) async throws -> AppUpdateDecision {
+        let version = currentVersion.addingPercentEncoding(
+            withAllowedCharacters: .alphanumerics
+        ) ?? currentVersion
+        let encodedLanguage = language.addingPercentEncoding(
+            withAllowedCharacters: .alphanumerics
+        ) ?? language
+        return try await send(
+            "/app-update?platform=ios&current_version=\(version)&language=\(encodedLanguage)"
+        )
+    }
+
+    func recordAppUpdateTelemetry(
+        userId: String,
+        request: AppUpdateTelemetryRequest
+    ) async throws {
+        let _: AppUpdateTelemetryResponse = try await send(
+            "/users/\(userId)/app-update/telemetry",
+            method: "POST",
+            body: request
+        )
+    }
+
     func updatePromotionHomeVisibility(
         userId: String,
         slug: String,
@@ -78,6 +104,19 @@ actor CompanionAPIClient {
             "/users/\(userId)/promotions/\(encodedSlug)/home-visibility",
             method: "POST",
             body: PromotionDismissRequest(hideOnHome: hideOnHome)
+        )
+    }
+
+    func recordPromotionInteraction(
+        userId: String,
+        slug: String,
+        request: PromotionInteractionRequest
+    ) async throws {
+        let encodedSlug = slug.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? slug
+        let _: PromotionInteractionResponse = try await send(
+            "/users/\(userId)/promotions/\(encodedSlug)/telemetry",
+            method: "POST",
+            body: request
         )
     }
 

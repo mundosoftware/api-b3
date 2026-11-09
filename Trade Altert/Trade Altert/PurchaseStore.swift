@@ -49,6 +49,8 @@ final class PurchaseStore: ObservableObject {
 
     private var updatesTask: Task<Void, Never>?
     private var currentUserId: String?
+    private var pendingPromotionRedemption: PromotionOffer?
+    private var pendingPromotionContext = "unknown"
 
     private init() {
         updatesTask = observeTransactionUpdates()
@@ -214,19 +216,41 @@ final class PurchaseStore: ObservableObject {
         return (product.price * multiplier).formatted(product.priceFormatStyle)
     }
 
-    func beginPromotionRedemption(_ promotion: PromotionOffer, hideOnHome: Bool) async {
+    func beginPromotionRedemption(
+        _ promotion: PromotionOffer,
+        context: String
+    ) async {
         guard promotion.id == availablePromotion?.id, currentUserId != nil else { return }
+        await recordPromotionInteraction(
+            "redeem_offer_tapped",
+            promotion: promotion,
+            context: context
+        )
         UIPasteboard.general.string = promotion.code
-        if hideOnHome && promotion.allowHomeSuppression {
-            await setPromotionHiddenOnHome(promotion, hidden: true)
-        }
+        await recordPromotionInteraction(
+            "code_auto_copied",
+            promotion: promotion,
+            context: context
+        )
+        pendingPromotionRedemption = promotion
+        pendingPromotionContext = context
         isPresentingOfferCodeRedemption = true
+        await recordPromotionInteraction(
+            "redemption_sheet_presented",
+            promotion: promotion,
+            context: context
+        )
     }
 
     func setPromotionHiddenOnHome(_ promotion: PromotionOffer, hidden: Bool) async {
         guard promotion.id == availablePromotion?.id,
               promotion.allowHomeSuppression,
               let currentUserId else { return }
+        await recordPromotionInteraction(
+            hidden ? "dont_show_again_enabled" : "dont_show_again_disabled",
+            promotion: promotion,
+            context: "home"
+        )
         do {
             try await CompanionAPIClient.shared.updatePromotionHomeVisibility(
                 userId: currentUserId,
@@ -247,6 +271,12 @@ final class PurchaseStore: ObservableObject {
     }
 
     func handleOfferCodeRedemptionPresentation(_ result: Result<Void, Error>) async {
+        let promotion = pendingPromotionRedemption ?? availablePromotion
+        let context = pendingPromotionContext
+        defer {
+            pendingPromotionRedemption = nil
+            pendingPromotionContext = "unknown"
+        }
         if case .failure(let error) = result {
             message = String(
                 format: AppLanguage.shared.text("promotion.error.redemption"),
@@ -259,7 +289,45 @@ final class PurchaseStore: ObservableObject {
                 reason: "storekit_error",
                 details: error.localizedDescription
             )
+            if let promotion {
+                await recordPromotionInteraction(
+                    "redemption_sheet_failed",
+                    promotion: promotion,
+                    context: context
+                )
+            }
+        } else if let promotion {
+            await recordPromotionInteraction(
+                "redemption_sheet_completed",
+                promotion: promotion,
+                context: context
+            )
         }
+    }
+
+    func recordPromotionInteraction(
+        _ eventType: String,
+        promotion: PromotionOffer,
+        context: String
+    ) async {
+        guard let currentUserId else { return }
+        let device = CompanionDeviceSnapshot.current
+        let request = PromotionInteractionRequest(
+            eventType: eventType,
+            presentationContext: context,
+            platform: "ios",
+            environment: AppConfig.apiEnvironment.rawValue,
+            appVersion: device.appVersion,
+            deviceModel: device.model,
+            deviceOs: device.systemVersion,
+            language: AppLanguage.shared.code.rawValue,
+            occurredAt: ISO8601DateFormatter().string(from: Date())
+        )
+        try? await CompanionAPIClient.shared.recordPromotionInteraction(
+            userId: currentUserId,
+            slug: promotion.slug,
+            request: request
+        )
     }
 
     func consumeNativeReviewRequest() {

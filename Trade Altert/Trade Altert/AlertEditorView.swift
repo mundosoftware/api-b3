@@ -200,7 +200,10 @@ struct AlertEditorView: View {
                 }
             }
         }
-        .alert(language.text("alert.unsaved_title"), isPresented: $showDiscardConfirmation) {
+        .alert(
+            language.text("alert.unsaved_title"),
+            isPresented: $showDiscardConfirmation.queuedBehindAppUpdate(model.presentedAppUpdate)
+        ) {
             Button(language.text("action.keep_editing"), role: .cancel) {}
             Button(language.text("action.discard"), role: .destructive) {
                 dismiss()

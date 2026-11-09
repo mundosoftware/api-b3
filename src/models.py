@@ -11,6 +11,28 @@ DecisionOutlook = Literal["bullish", "neutral", "bearish"]
 DecisionRiskLevel = Literal["low", "medium", "high"]
 ForecastProvider = Literal["kronos", "statistical"]
 AIOutlookJobStatus = Literal["queued", "running", "succeeded", "failed", "canceled"]
+AppUpdateMode = Literal["soft", "hard"]
+AppUpdateEventType = Literal[
+    "modal_shown",
+    "update_tapped",
+    "later_tapped",
+    "store_open_failed",
+]
+PromotionInteractionEventType = Literal[
+    "modal_shown",
+    "modal_closed",
+    "paywall_card_shown",
+    "copy_code_tapped",
+    "dont_show_again_enabled",
+    "dont_show_again_disabled",
+    "redeem_offer_tapped",
+    "code_auto_copied",
+    "redemption_sheet_presented",
+    "redemption_sheet_completed",
+    "redemption_sheet_failed",
+    "redemption_confirmed",
+]
+PromotionPresentationContext = Literal["home", "paywall", "unknown"]
 
 
 class CompanyOut(BaseModel):
@@ -469,9 +491,19 @@ class TrialExtensionGrantOut(BaseModel):
 class PromotionTextOut(BaseModel):
     title: str
     body: str
+    show_body: bool
     cta_label: str
     home_suppression_label: str
     plans_notice: str
+    show_plans_notice: bool
+    price_authority: str
+    show_price_authority: bool
+    copy_instruction: str
+    show_copy_instruction: bool
+    native_sheet_notice: str
+    show_native_sheet_notice: bool
+    valid_until: str
+    show_valid_until: bool
 
 
 class PromotionOfferOut(BaseModel):
@@ -499,6 +531,50 @@ class PromotionAvailabilityOut(BaseModel):
 
 class PromotionDismissRequest(BaseModel):
     hide_on_home: bool = True
+
+
+class PromotionInteractionRequest(BaseModel):
+    event_type: PromotionInteractionEventType
+    presentation_context: PromotionPresentationContext
+    platform: str = Field(default="ios", max_length=16)
+    environment: str | None = Field(default=None, max_length=32)
+    app_version: str | None = Field(default=None, max_length=40)
+    device_model: str | None = Field(default=None, max_length=80)
+    device_os: str | None = Field(default=None, max_length=40)
+    language: str | None = Field(default=None, max_length=16)
+    occurred_at: str | None = Field(default=None, max_length=40)
+
+
+class PromotionInteractionEventOut(PromotionInteractionRequest):
+    id: int
+    promotion_id: int | None = None
+    promotion_slug: str
+    user_id: str
+    product_id: str | None = None
+    created_at: str
+
+
+class PromotionInteractionEventListOut(BaseModel):
+    result: list[PromotionInteractionEventOut]
+
+
+class PromotionInteractionSummaryOut(BaseModel):
+    window_hours: int
+    promotion_slug: str | None = None
+    total_events: int
+    unique_users: int
+    impressions: int
+    modal_closes: int
+    copy_taps: int
+    suppression_enables: int
+    redeem_taps: int
+    confirmed_redemptions: int
+    close_rate: float
+    copy_rate: float
+    redeem_tap_rate: float
+    confirmed_redemption_rate: float
+    by_event_type: list[dict[str, int | str]]
+    by_context: list[dict[str, int | str]]
 
 
 class PromotionRedemptionRequest(BaseModel):
@@ -533,12 +609,26 @@ class PromotionAdminUpdateRequest(BaseModel):
     title_en: str | None = Field(default=None, max_length=160)
     body_pt: str | None = Field(default=None, max_length=1000)
     body_en: str | None = Field(default=None, max_length=1000)
+    show_body: bool | None = None
     cta_pt: str | None = Field(default=None, max_length=120)
     cta_en: str | None = Field(default=None, max_length=120)
     home_suppression_label_pt: str | None = Field(default=None, max_length=240)
     home_suppression_label_en: str | None = Field(default=None, max_length=240)
     plans_notice_pt: str | None = Field(default=None, max_length=500)
     plans_notice_en: str | None = Field(default=None, max_length=500)
+    show_plans_notice: bool | None = None
+    price_authority_pt: str | None = Field(default=None, max_length=500)
+    price_authority_en: str | None = Field(default=None, max_length=500)
+    show_price_authority: bool | None = None
+    copy_instruction_pt: str | None = Field(default=None, max_length=700)
+    copy_instruction_en: str | None = Field(default=None, max_length=700)
+    show_copy_instruction: bool | None = None
+    native_sheet_notice_pt: str | None = Field(default=None, max_length=500)
+    native_sheet_notice_en: str | None = Field(default=None, max_length=500)
+    show_native_sheet_notice: bool | None = None
+    valid_until_pt: str | None = Field(default=None, max_length=240)
+    valid_until_en: str | None = Field(default=None, max_length=240)
+    show_valid_until: bool | None = None
 
 
 class PromotionAdminCreateRequest(BaseModel):
@@ -557,6 +647,7 @@ class PromotionAdminCreateRequest(BaseModel):
     title_en: str = Field(default="New promotion", max_length=160)
     body_pt: str = Field(default="Oferta por tempo limitado.", max_length=1000)
     body_en: str = Field(default="Limited-time offer.", max_length=1000)
+    show_body: bool = True
     cta_pt: str = Field(default="Resgatar oferta", max_length=120)
     cta_en: str = Field(default="Redeem offer", max_length=120)
     home_suppression_label_pt: str = Field(
@@ -572,6 +663,37 @@ class PromotionAdminCreateRequest(BaseModel):
     plans_notice_en: str = Field(
         default="This offer may still appear in Plans while it is active.", max_length=500
     )
+    show_plans_notice: bool = True
+    price_authority_pt: str = Field(
+        default="Estimativa na moeda da sua App Store. A Apple mostra o preço final antes da confirmação.",
+        max_length=500,
+    )
+    price_authority_en: str = Field(
+        default="Estimated in your App Store currency. Apple shows the final price before confirmation.",
+        max_length=500,
+    )
+    show_price_authority: bool = True
+    copy_instruction_pt: str = Field(
+        default="Ao continuar, o código abaixo será copiado automaticamente. Cole-o na tela segura da App Store.",
+        max_length=700,
+    )
+    copy_instruction_en: str = Field(
+        default="When you continue, the code below is copied automatically. Paste it into the secure App Store sheet.",
+        max_length=700,
+    )
+    show_copy_instruction: bool = True
+    native_sheet_notice_pt: str = Field(
+        default="O resgate e a compra são concluídos na tela nativa da App Store.",
+        max_length=500,
+    )
+    native_sheet_notice_en: str = Field(
+        default="Redemption and purchase are completed in the native App Store sheet.",
+        max_length=500,
+    )
+    show_native_sheet_notice: bool = True
+    valid_until_pt: str = Field(default="Válida até [date]", max_length=240)
+    valid_until_en: str = Field(default="Valid until [date]", max_length=240)
+    show_valid_until: bool = True
 
 
 class PromotionCodeImportItem(BaseModel):
@@ -585,6 +707,86 @@ class PromotionCodeImportRequest(BaseModel):
 
 class PromotionCodeUpdateRequest(BaseModel):
     enabled: bool
+
+
+class AppUpdateTextOut(BaseModel):
+    title: str
+    message: str
+    update_cta: str
+    later_cta: str
+
+
+class AppUpdateDecisionOut(BaseModel):
+    available: bool
+    reason: str
+    platform: str
+    current_version: str
+    target_version: str
+    mode: AppUpdateMode
+    store_url: str
+    text: AppUpdateTextOut
+
+
+class AppUpdatePolicyOut(BaseModel):
+    platform: str
+    enabled: bool
+    target_version: str
+    mode: AppUpdateMode
+    store_url: str
+    title_pt: str
+    title_en: str
+    message_pt: str
+    message_en: str
+    update_cta_pt: str
+    update_cta_en: str
+    later_cta_pt: str
+    later_cta_en: str
+    created_at: str
+    updated_at: str
+
+
+class AppUpdatePolicyUpdateRequest(BaseModel):
+    enabled: bool
+    target_version: str = Field(
+        pattern=(
+            r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)"
+            r"(?:-((?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)"
+            r"(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*))?"
+            r"(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$"
+        ),
+        max_length=64,
+    )
+    mode: AppUpdateMode
+    store_url: str = Field(pattern=r"^https://", max_length=1000)
+    title_pt: str = Field(min_length=1, max_length=160)
+    title_en: str = Field(min_length=1, max_length=160)
+    message_pt: str = Field(min_length=1, max_length=1000)
+    message_en: str = Field(min_length=1, max_length=1000)
+    update_cta_pt: str = Field(min_length=1, max_length=120)
+    update_cta_en: str = Field(min_length=1, max_length=120)
+    later_cta_pt: str = Field(min_length=1, max_length=120)
+    later_cta_en: str = Field(min_length=1, max_length=120)
+
+
+class AppUpdateTelemetryRequest(BaseModel):
+    event_type: AppUpdateEventType
+    platform: str = Field(default="ios", min_length=1, max_length=32)
+    current_version: str = Field(min_length=1, max_length=64)
+    target_version: str = Field(min_length=1, max_length=64)
+    mode: AppUpdateMode
+    environment: str | None = Field(default=None, max_length=32)
+    language: str | None = Field(default=None, max_length=16)
+    occurred_at: str | None = Field(default=None, max_length=64)
+
+
+class AppUpdateTelemetryEventOut(AppUpdateTelemetryRequest):
+    id: int
+    user_id: str
+    created_at: str
+
+
+class AppUpdateTelemetryEventListOut(BaseModel):
+    result: list[AppUpdateTelemetryEventOut]
 
 
 class IAPTrialTelemetryOut(IAPTrialStatusOut):

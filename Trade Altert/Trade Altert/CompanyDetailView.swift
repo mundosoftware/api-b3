@@ -142,12 +142,18 @@ struct CompanyDetailView: View {
                 aiIsLoading = false
             }
         }
-        .alert(language.text("ai.ftue.title"), isPresented: $showAIActivationDisclosure) {
+        .alert(
+            language.text("ai.ftue.title"),
+            isPresented: $showAIActivationDisclosure.queuedBehindAppUpdate(model.presentedAppUpdate)
+        ) {
             Button(language.text("action.ok"), role: .cancel) {}
         } message: {
             Text(language.text("ai.ftue.message"))
         }
-        .alert(language.text("ai.disable.confirm_title"), isPresented: $showAIDeactivationConfirmation) {
+        .alert(
+            language.text("ai.disable.confirm_title"),
+            isPresented: $showAIDeactivationConfirmation.queuedBehindAppUpdate(model.presentedAppUpdate)
+        ) {
             Button(language.text("action.cancel"), role: .cancel) {}
             Button(language.text("ai.disable.confirm_cta"), role: .destructive) {
                 Task {
@@ -157,7 +163,10 @@ struct CompanyDetailView: View {
         } message: {
             Text(language.text("ai.disable.confirm_message"))
         }
-        .alert(language.text("ai.cancel.confirm_title"), isPresented: $showAICancelConfirmation) {
+        .alert(
+            language.text("ai.cancel.confirm_title"),
+            isPresented: $showAICancelConfirmation.queuedBehindAppUpdate(model.presentedAppUpdate)
+        ) {
             Button(language.text("action.cancel"), role: .cancel) {}
             Button(language.text("ai.cancel.confirm_cta"), role: .destructive) {
                 cancelAIOutlookJob()

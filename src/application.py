@@ -4,9 +4,9 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Literal
 
-from fastapi import FastAPI, Header, HTTPException, Query, Response, status
+from fastapi import FastAPI, Header, HTTPException, Query, Request, Response, status
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 
 from src.ai_analysis import DecisionSupportService, PredictionError
 from src.ai_outlook_jobs import AIOutlookJobProcessor, run_ai_outlook_job_loop
@@ -15,6 +15,12 @@ from src.candles import CandleLookupError, CandleService
 from src.config import Settings, get_settings
 from src.database import init_db
 from src.models import (
+    AppUpdateDecisionOut,
+    AppUpdatePolicyOut,
+    AppUpdatePolicyUpdateRequest,
+    AppUpdateTelemetryEventListOut,
+    AppUpdateTelemetryEventOut,
+    AppUpdateTelemetryRequest,
     AlertRuleCreateRequest,
     AlertRuleListOut,
     AlertRuleOut,
@@ -63,6 +69,10 @@ from src.models import (
     PromotionCodeUpdateRequest,
     PromotionCodeImportRequest,
     PromotionDismissRequest,
+    PromotionInteractionEventListOut,
+    PromotionInteractionEventOut,
+    PromotionInteractionRequest,
+    PromotionInteractionSummaryOut,
     PromotionRedemptionOut,
     PromotionRedemptionRequest,
     QuoteOut,
@@ -75,10 +85,11 @@ from src.models import (
 )
 from src.onesignal import OneSignalClient, OneSignalError
 from src.operational_notifier import OperationalNotifier
-from src.promotion_panel import PROMOTION_PANEL_HTML
+from src.promotion_panel import render_promotion_panel
 from src.repositories import Repository
 from src.telemetry import TelemetryService
 from src.tickers import QuoteLookupError, TickerService
+from src.versioning import display_version_from_release_tag
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -557,6 +568,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     @app.post(
+        "/users/{user_id}/promotions/{slug}/telemetry",
+        response_model=PromotionInteractionEventOut,
+        status_code=status.HTTP_201_CREATED,
+    )
+    async def record_promotion_interaction(
+        user_id: str,
+        slug: str,
+        request: PromotionInteractionRequest,
+    ) -> PromotionInteractionEventOut:
+        try:
+            return PromotionInteractionEventOut(
+                **repository.record_promotion_interaction(user_id, slug, request)
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
+            ) from exc
+
+    @app.post(
         "/users/{user_id}/promotions/{slug}/redemptions",
         response_model=PromotionRedemptionOut,
     )
@@ -571,6 +601,40 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+    @app.get("/app-update", response_model=AppUpdateDecisionOut)
+    async def app_update(
+        response: Response,
+        current_version: str = Query(max_length=64),
+        platform: str = Query(default="ios", max_length=32),
+        language: str = Query(default="en", pattern="^(pt|en)([-_].*)?$"),
+    ) -> AppUpdateDecisionOut:
+        response.headers["Cache-Control"] = "no-store"
+        try:
+            return AppUpdateDecisionOut(
+                **repository.app_update_decision(
+                    current_version=current_version,
+                    platform=platform,
+                    language=language,
+                )
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
+            ) from exc
+
+    @app.post(
+        "/users/{user_id}/app-update/telemetry",
+        response_model=AppUpdateTelemetryEventOut,
+        status_code=status.HTTP_201_CREATED,
+    )
+    async def record_app_update_telemetry(
+        user_id: str,
+        request: AppUpdateTelemetryRequest,
+    ) -> AppUpdateTelemetryEventOut:
+        return AppUpdateTelemetryEventOut(
+            **repository.record_app_update_event(user_id, request)
+        )
 
     @app.get("/users/{user_id}/favorites", response_model=FavoriteListOut)
     async def list_favorites(user_id: str) -> FavoriteListOut:
@@ -628,9 +692,52 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         require_admin(x_admin_token)
         return await run_in_threadpool(alert_engine.run_due_checks)
 
-    @app.get("/admin/promotions", response_class=HTMLResponse)
-    async def promotions_panel() -> HTMLResponse:
-        return HTMLResponse(PROMOTION_PANEL_HTML)
+    @app.get("/admin", response_class=HTMLResponse, name="admin_panel")
+    async def admin_panel() -> HTMLResponse:
+        return HTMLResponse(
+            render_promotion_panel(
+                display_version_from_release_tag(settings.panel_release_tag)
+            )
+        )
+
+    @app.get("/admin/promotions", include_in_schema=False)
+    async def legacy_promotions_panel(request: Request) -> RedirectResponse:
+        root_path = str(request.scope.get("root_path", "")).rstrip("/")
+        return RedirectResponse(
+            url=f"{root_path}/admin",
+            status_code=status.HTTP_308_PERMANENT_REDIRECT,
+        )
+
+    @app.get("/admin/app-update", response_model=AppUpdatePolicyOut)
+    async def admin_get_app_update_policy(
+        platform: str = Query(default="ios", max_length=32),
+        x_admin_token: str | None = Header(default=None),
+    ) -> AppUpdatePolicyOut:
+        require_admin(x_admin_token)
+        try:
+            return AppUpdatePolicyOut(
+                **repository.get_app_update_policy(platform=platform)
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
+            ) from exc
+
+    @app.put("/admin/app-update", response_model=AppUpdatePolicyOut)
+    async def admin_update_app_update_policy(
+        request: AppUpdatePolicyUpdateRequest,
+        platform: str = Query(default="ios", max_length=32),
+        x_admin_token: str | None = Header(default=None),
+    ) -> AppUpdatePolicyOut:
+        require_admin(x_admin_token)
+        try:
+            return AppUpdatePolicyOut(
+                **repository.update_app_update_policy(request, platform=platform)
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+            ) from exc
 
     @app.get("/admin/promotions/api")
     async def admin_list_promotions(
@@ -860,6 +967,54 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )
         )
 
+    @app.get(
+        "/admin/telemetry/promotion-events",
+        response_model=PromotionInteractionEventListOut,
+    )
+    async def telemetry_promotion_events(
+        x_admin_token: str | None = Header(default=None),
+        user_id: str | None = Query(default=None),
+        promotion_slug: str | None = Query(default=None),
+        event_type: str | None = Query(default=None),
+        presentation_context: str | None = Query(default=None),
+        environment: str | None = Query(default=None),
+        hours: int | None = Query(default=None, ge=1, le=8760),
+        limit: int = Query(default=100, ge=1, le=500),
+    ) -> PromotionInteractionEventListOut:
+        require_admin(x_admin_token)
+        return PromotionInteractionEventListOut(
+            result=repository.list_promotion_interactions(
+                limit=limit,
+                user_id=user_id,
+                promotion_slug=promotion_slug,
+                event_type=event_type,
+                presentation_context=presentation_context,
+                environment=environment,
+                hours=hours,
+            )
+        )
+
+    @app.get(
+        "/admin/telemetry/promotion-summary",
+        response_model=PromotionInteractionSummaryOut,
+    )
+    async def telemetry_promotion_summary(
+        x_admin_token: str | None = Header(default=None),
+        user_id: str | None = Query(default=None),
+        promotion_slug: str | None = Query(default=None),
+        environment: str | None = Query(default=None),
+        hours: int = Query(default=24, ge=1, le=8760),
+    ) -> PromotionInteractionSummaryOut:
+        require_admin(x_admin_token)
+        return PromotionInteractionSummaryOut(
+            **repository.summarize_promotion_interactions(
+                hours=hours,
+                promotion_slug=promotion_slug,
+                user_id=user_id,
+                environment=environment,
+            )
+        )
+
     @app.get("/admin/telemetry/iap-trial-extension-asks", response_model=IAPTelemetryEventListOut)
     async def telemetry_iap_trial_extension_asks(
         x_admin_token: str | None = Header(default=None),
@@ -1052,6 +1207,27 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 limit=limit,
                 user_id=user_id,
                 ticker=ticker,
+            )
+        )
+
+    @app.get(
+        "/admin/telemetry/app-update-events",
+        response_model=AppUpdateTelemetryEventListOut,
+    )
+    async def telemetry_app_update_events(
+        x_admin_token: str | None = Header(default=None),
+        user_id: str | None = Query(default=None),
+        event_type: str | None = Query(default=None),
+        platform: str | None = Query(default=None),
+        limit: int = Query(default=100, ge=1, le=500),
+    ) -> AppUpdateTelemetryEventListOut:
+        require_admin(x_admin_token)
+        return AppUpdateTelemetryEventListOut(
+            result=repository.list_app_update_events(
+                limit=limit,
+                user_id=user_id,
+                event_type=event_type,
+                platform=platform,
             )
         )
 

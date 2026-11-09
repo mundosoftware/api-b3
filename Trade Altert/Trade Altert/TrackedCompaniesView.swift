@@ -46,7 +46,7 @@ struct TrackedCompaniesView: View {
                 }
             }
         }
-        .sheet(isPresented: $showPlansSheet) {
+        .sheet(isPresented: $showPlansSheet.queuedBehindAppUpdate(model.presentedAppUpdate)) {
             PurchasePlansSheetView()
                 .presentationDetents([.large])
                 .interactiveDismissDisabled(false)

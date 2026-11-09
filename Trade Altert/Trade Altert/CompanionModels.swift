@@ -525,15 +525,35 @@ struct TrialExtensionGrant: Decodable {
 struct PromotionText: Decodable {
     let title: String
     let body: String
+    let showBody: Bool
     let ctaLabel: String
     let homeSuppressionLabel: String
     let plansNotice: String
+    let showPlansNotice: Bool
+    let priceAuthority: String
+    let showPriceAuthority: Bool
+    let copyInstruction: String
+    let showCopyInstruction: Bool
+    let nativeSheetNotice: String
+    let showNativeSheetNotice: Bool
+    let validUntil: String
+    let showValidUntil: Bool
 
     enum CodingKeys: String, CodingKey {
         case title, body
+        case showBody = "show_body"
         case ctaLabel = "cta_label"
         case homeSuppressionLabel = "home_suppression_label"
         case plansNotice = "plans_notice"
+        case showPlansNotice = "show_plans_notice"
+        case priceAuthority = "price_authority"
+        case showPriceAuthority = "show_price_authority"
+        case copyInstruction = "copy_instruction"
+        case showCopyInstruction = "show_copy_instruction"
+        case nativeSheetNotice = "native_sheet_notice"
+        case showNativeSheetNotice = "show_native_sheet_notice"
+        case validUntil = "valid_until"
+        case showValidUntil = "show_valid_until"
     }
 }
 
@@ -581,6 +601,33 @@ struct PromotionDismissRequest: Encodable {
     }
 }
 
+struct PromotionInteractionRequest: Encodable {
+    let eventType: String
+    let presentationContext: String
+    let platform: String
+    let environment: String
+    let appVersion: String
+    let deviceModel: String
+    let deviceOs: String
+    let language: String
+    let occurredAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case eventType = "event_type"
+        case presentationContext = "presentation_context"
+        case platform, environment
+        case appVersion = "app_version"
+        case deviceModel = "device_model"
+        case deviceOs = "device_os"
+        case language
+        case occurredAt = "occurred_at"
+    }
+}
+
+struct PromotionInteractionResponse: Decodable {
+    let id: Int
+}
+
 struct PromotionRedemptionRequest: Encodable {
     let productId: String
     let transactionId: String
@@ -599,6 +646,64 @@ struct PromotionRedemptionRequest: Encodable {
 
 struct PromotionRedemptionResponse: Decodable {
     let recorded: Bool
+}
+
+struct AppUpdateText: Decodable {
+    let title: String
+    let message: String
+    let updateCTA: String
+    let laterCTA: String
+
+    enum CodingKeys: String, CodingKey {
+        case title, message
+        case updateCTA = "update_cta"
+        case laterCTA = "later_cta"
+    }
+}
+
+struct AppUpdateDecision: Decodable, Identifiable {
+    let available: Bool
+    let reason: String
+    let platform: String
+    let currentVersion: String
+    let targetVersion: String
+    let mode: String
+    let storeURL: String
+    let text: AppUpdateText
+
+    var id: String { "\(platform):\(targetVersion):\(mode)" }
+    var isHardUpdate: Bool { mode == "hard" }
+
+    enum CodingKeys: String, CodingKey {
+        case available, reason, platform, mode, text
+        case currentVersion = "current_version"
+        case targetVersion = "target_version"
+        case storeURL = "store_url"
+    }
+}
+
+struct AppUpdateTelemetryRequest: Encodable {
+    let eventType: String
+    let platform: String
+    let currentVersion: String
+    let targetVersion: String
+    let mode: String
+    let environment: String
+    let language: String
+    let occurredAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case eventType = "event_type"
+        case platform
+        case currentVersion = "current_version"
+        case targetVersion = "target_version"
+        case mode, environment, language
+        case occurredAt = "occurred_at"
+    }
+}
+
+struct AppUpdateTelemetryResponse: Decodable {
+    let id: Int
 }
 
 struct IAPTelemetryRequest: Encodable {

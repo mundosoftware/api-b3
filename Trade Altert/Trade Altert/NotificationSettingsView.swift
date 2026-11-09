@@ -78,13 +78,20 @@ struct NotificationSettingsView: View {
                 .buttonStyle(.borderless)
             }
 
-            Section(language.text("section.language")) {
+            Section {
                 Picker(language.text("section.language"), selection: $language.code) {
                     ForEach(AppLanguageCode.allCases) { code in
                         Text(code.displayName).tag(code)
                     }
                 }
                 .pickerStyle(.segmented)
+            } header: {
+                Text(language.text("section.language"))
+            } footer: {
+                Text(CompanionDeviceSnapshot.current.displayVersion)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
 
             #if DEBUG
@@ -140,7 +147,7 @@ struct NotificationSettingsView: View {
         }
         .navigationTitle(language.text("tab.settings"))
         .disabled(model.isLoading || purchases.isLoadingProducts)
-        .sheet(isPresented: $showPlansSheet) {
+        .sheet(isPresented: $showPlansSheet.queuedBehindAppUpdate(model.presentedAppUpdate)) {
             PurchasePlansSheetView()
                 .presentationDetents([.large])
                 .interactiveDismissDisabled(false)
