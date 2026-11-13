@@ -145,6 +145,12 @@ class PromotionsTest(unittest.TestCase):
                 "window.location.pathname.replace(/\\/admin\\/?$/,'')",
                 panel.text,
             )
+            self.assertIn('<option value="all">All period</option>', panel.text)
+            self.assertIn("hiddenColumns:['display_name']", panel.text)
+            self.assertIn("priorityColumns:['user_id','created_at','event_type']", panel.text)
+            self.assertIn("America/Fortaleza", panel.text)
+            self.assertIn("setTelemetryLoading(true)", panel.text)
+            self.assertIn("left_panel_open", panel.text)
             codes_response = client.get(
                 f"/admin/promotions/{promotion['id']}/codes",
                 headers={"X-Admin-Token": "secret"},
@@ -160,6 +166,47 @@ class PromotionsTest(unittest.TestCase):
             legacy = client.get("/admin/promotions", follow_redirects=False)
             self.assertEqual(legacy.status_code, 308)
             self.assertEqual(legacy.headers["location"], "/dev/admin")
+
+    def test_promotion_summary_can_include_the_complete_history(self):
+        offer = self.repository.promotion_availability(
+            "history-user", now=datetime(2026, 11, 7, 12, tzinfo=UTC)
+        )["promotion"]
+        self.repository.record_promotion_interaction(
+            "history-user",
+            offer["slug"],
+            PromotionInteractionRequest(
+                event_type="modal_shown",
+                presentation_context="home",
+                environment="development",
+            ),
+        )
+        with self.repository.database.connect() as db:
+            db.execute(
+                """
+                UPDATE promotion_interaction_events
+                SET created_at = '2020-01-01T12:00:00+00:00'
+                WHERE user_id = 'history-user'
+                """
+            )
+
+        self.assertEqual(
+            self.repository.summarize_promotion_interactions(hours=24)["total_events"],
+            0,
+        )
+        self.assertEqual(
+            self.repository.summarize_promotion_interactions(hours=None)["total_events"],
+            1,
+        )
+
+        with TestClient(create_app(self.settings)) as client:
+            response = client.get(
+                "/admin/telemetry/promotion-summary",
+                params={"all_period": "true"},
+                headers={"X-Admin-Token": "secret"},
+            )
+            self.assertEqual(response.status_code, 200)
+            self.assertIsNone(response.json()["window_hours"])
+            self.assertEqual(response.json()["total_events"], 1)
 
     def test_admin_controls_localized_promotion_copy_and_visibility(self):
         promotion = self.repository.list_promotions_for_admin()[0]

@@ -30,7 +30,7 @@ Open `/admin` in production or `/dev/admin` in the development deployment. The l
 - available, reserved, and redeemed counts;
 - the user and StoreKit transaction associated with a reported redemption.
 
-The same panel now uses a collapsible Material Icons sidebar for Overview, Promotions, App versions, and Telemetry. Its visible version appears immediately above Logout as `v.1.2.0`, derived during deployment from the nearest reachable Git tag matching `RELEASE_1.2.0`. Logout stays at the bottom of the sidebar and clears the locally stored admin token. The telemetry area covers the safe operational/read endpoints in `docs/telemetry-postman-collection.json`; direct WhatsApp test delivery and synthetic-user creation remain Postman-only to avoid accidental notifications.
+The same panel now uses a collapsible Material Icons sidebar for Overview, Promotions, App versions, and Telemetry. In its collapsed state only titled icons remain. Its visible version appears immediately above Logout as `v.1.2.0`, derived during deployment from the nearest reachable Git tag matching `RELEASE_1.2.0`. Logout stays at the bottom of the sidebar and clears the locally stored admin token. The telemetry area covers the safe operational/read endpoints in `docs/telemetry-postman-collection.json`; it supports complete-history queries, shows a request progress state, formats datetimes in BRT, and uses horizontal table scrolling for wide datasets. Direct WhatsApp test delivery and synthetic-user creation remain Postman-only to avoid accidental notifications.
 
 The valid-until copy uses `[date]` as a placeholder for the campaign end date, formatted
 with the language selected in the app. Existing campaigns receive the previous built-in

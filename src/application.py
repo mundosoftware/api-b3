@@ -935,11 +935,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         user_id: str | None = Query(default=None),
         ticker: str | None = Query(default=None),
         hours: int = Query(default=24, ge=1, le=8760),
+        all_period: bool = Query(default=False),
     ) -> AIOutlookUsageSummaryOut:
         require_admin(x_admin_token)
         return AIOutlookUsageSummaryOut(
             **repository.summarize_ai_outlook_usage(
-                hours=hours,
+                hours=None if all_period is True else hours,
                 user_id=user_id,
                 ticker=ticker,
             )
@@ -1004,11 +1005,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         promotion_slug: str | None = Query(default=None),
         environment: str | None = Query(default=None),
         hours: int = Query(default=24, ge=1, le=8760),
+        all_period: bool = Query(default=False),
     ) -> PromotionInteractionSummaryOut:
         require_admin(x_admin_token)
         return PromotionInteractionSummaryOut(
             **repository.summarize_promotion_interactions(
-                hours=hours,
+                hours=None if all_period is True else hours,
                 promotion_slug=promotion_slug,
                 user_id=user_id,
                 environment=environment,
@@ -1132,12 +1134,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         product_id: str | None = Query(default=None),
         environment: str | None = Query(default=None),
         hours: int = Query(default=24, ge=1, le=8760),
+        all_period: bool = Query(default=False),
     ) -> IAPTelemetryOutcomeListOut:
         require_admin(x_admin_token)
         return IAPTelemetryOutcomeListOut(
             result=repository.list_iap_telemetry_outcomes(
                 outcome=outcome,
-                hours=hours,
+                hours=None if all_period is True else hours,
                 user_id=user_id,
                 product_id=product_id,
                 environment=environment,
@@ -1151,11 +1154,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         product_id: str | None = Query(default=None),
         environment: str | None = Query(default=None),
         hours: int = Query(default=24, ge=1, le=8760),
+        all_period: bool = Query(default=False),
     ) -> IAPTelemetrySummaryOut:
         require_admin(x_admin_token)
         return IAPTelemetrySummaryOut(
             **repository.summarize_iap_telemetry(
-                hours=hours,
+                hours=None if all_period is True else hours,
                 user_id=user_id,
                 product_id=product_id,
                 environment=environment,

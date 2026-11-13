@@ -874,15 +874,18 @@ class Repository:
 
     def summarize_promotion_interactions(
         self,
-        hours: int = 24,
+        hours: int | None = 24,
         promotion_slug: str | None = None,
         user_id: str | None = None,
         environment: str | None = None,
     ) -> dict[str, Any]:
-        hours = max(1, min(hours, 8760))
-        since = datetime.now(UTC).replace(microsecond=0) - timedelta(hours=hours)
-        conditions = ["created_at >= ?"]
-        params: list[Any] = [since.isoformat()]
+        conditions: list[str] = []
+        params: list[Any] = []
+        if hours is not None:
+            hours = max(1, min(hours, 8760))
+            since = datetime.now(UTC).replace(microsecond=0) - timedelta(hours=hours)
+            conditions.append("created_at >= ?")
+            params.append(since.isoformat())
         for column, value in (
             ("promotion_slug", promotion_slug),
             ("user_id", user_id),
@@ -891,7 +894,7 @@ class Repository:
             if value:
                 conditions.append(f"{column} = ?")
                 params.append(value)
-        where = f"WHERE {' AND '.join(conditions)}"
+        where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
         with self.database.connect() as db:
             totals = db.execute(
                 f"""
@@ -2060,23 +2063,27 @@ class Repository:
 
     def summarize_ai_outlook_usage(
         self,
-        hours: int = 24,
+        hours: int | None = 24,
         user_id: str | None = None,
         ticker: str | None = None,
     ) -> dict[str, Any]:
-        hours = max(1, min(hours, 8760))
-        since = (
-            datetime.now(UTC).replace(microsecond=0) - timedelta(hours=hours)
-        ).isoformat()
-        conditions = ["queued_at >= ?"]
-        params: list[Any] = [since]
+        conditions: list[str] = []
+        params: list[Any] = []
+        since: str | None = None
+        if hours is not None:
+            hours = max(1, min(hours, 8760))
+            since = (
+                datetime.now(UTC).replace(microsecond=0) - timedelta(hours=hours)
+            ).isoformat()
+            conditions.append("queued_at >= ?")
+            params.append(since)
         if user_id:
             conditions.append("user_id = ?")
             params.append(user_id)
         if ticker:
             conditions.append("ticker = ?")
             params.append(normalize_ticker(ticker))
-        where = f"WHERE {' AND '.join(conditions)}"
+        where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
         with self.database.connect() as db:
             totals = db.execute(
                 f"""
@@ -2942,18 +2949,17 @@ class Repository:
 
     def summarize_iap_telemetry(
         self,
-        hours: int = 24,
+        hours: int | None = 24,
         user_id: str | None = None,
         product_id: str | None = None,
         environment: str | None = None,
     ) -> dict[str, Any]:
-        hours = max(1, min(hours, 8760))
-        since = datetime.now(UTC).replace(microsecond=0) - timedelta(hours=hours)
+        since = self._since_for_hours(hours)
         where, params = self._iap_telemetry_filters(
             user_id=user_id,
             product_id=product_id,
             environment=environment,
-            since=since.isoformat(),
+            since=since,
         )
         with self.database.connect() as db:
             total_events = db.execute(
@@ -2993,7 +2999,7 @@ class Repository:
                 user_id=user_id,
                 product_id=product_id,
                 environment=environment,
-                since=since.isoformat(),
+                since=since,
             ),
         }
 
@@ -3141,7 +3147,7 @@ class Repository:
     def list_iap_telemetry_outcomes(
         self,
         outcome: str = "all",
-        hours: int = 24,
+        hours: int | None = 24,
         user_id: str | None = None,
         product_id: str | None = None,
         environment: str | None = None,

@@ -154,7 +154,7 @@ class AIOutlookTelemetryTickerSummaryOut(BaseModel):
 
 
 class AIOutlookUsageSummaryOut(BaseModel):
-    window_hours: int
+    window_hours: int | None
     user_id: str | None = None
     ticker: str | None = None
     total_jobs: int
@@ -559,7 +559,7 @@ class PromotionInteractionEventListOut(BaseModel):
 
 
 class PromotionInteractionSummaryOut(BaseModel):
-    window_hours: int
+    window_hours: int | None
     promotion_slug: str | None = None
     total_events: int
     unique_users: int
@@ -832,7 +832,7 @@ class IAPTelemetryProductSummaryOut(BaseModel):
 
 
 class IAPTelemetrySummaryOut(BaseModel):
-    window_hours: int
+    window_hours: int | None
     user_id: str | None = None
     product_id: str | None = None
     total_events: int
